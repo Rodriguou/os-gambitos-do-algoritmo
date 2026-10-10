@@ -1,0 +1,1 @@
+# os-gambitos-do-algoritmo
