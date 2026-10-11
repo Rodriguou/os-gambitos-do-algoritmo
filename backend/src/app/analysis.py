@@ -78,7 +78,12 @@ class AnalysisService:
             played = await self._evaluate_played_move(board, move, depth, max_time_ms)
 
         best = analysis.moves[0]
-        classification = classify_delta(score_value(played) - score_value(best))
+        if played.mate_in is not None and played.mate_in > 0:
+            # Delivering mate ends the game: always a brilliancy,
+            # even though the delta against the best move is zero.
+            classification: MoveClassification = "brilliancy"
+        else:
+            classification = classify_delta(score_value(played) - score_value(best))
 
         context = ExplanationContext(
             fen=request.fen,

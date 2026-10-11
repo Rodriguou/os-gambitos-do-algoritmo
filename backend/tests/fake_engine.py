@@ -14,8 +14,13 @@ class FakeEngine:
     each move a slightly worse score so the best move is deterministic.
     """
 
-    def __init__(self, base_score_cp: int = 0) -> None:
+    def __init__(
+        self,
+        base_score_cp: int = 0,
+        mate_move: chess.Move | None = None,
+    ) -> None:
         self.base_score_cp = base_score_cp
+        self.mate_move = mate_move
         self.calls: list[dict[str, int]] = []
 
     async def analyse(
@@ -40,6 +45,18 @@ class FakeEngine:
             )
             for index, move in enumerate(list(board.legal_moves)[:multi_pv])
         ]
+        if self.mate_move is not None and self.mate_move in board.legal_moves:
+            moves.insert(
+                0,
+                ScoredMove(
+                    move=self.mate_move,
+                    score_cp=None,
+                    mate_in=1,
+                    win_rate=1.0,
+                    depth=depth,
+                    pv=[self.mate_move],
+                ),
+            )
         return EngineAnalysis(moves=moves)
 
     async def close(self) -> None:
