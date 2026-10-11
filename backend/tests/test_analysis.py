@@ -57,6 +57,19 @@ async def test_mate_in_one_is_classified_as_brilliancy() -> None:
     assert "Xeque-mate em 1" in response.explanation.summary
 
 
+async def test_mate_inside_the_multi_pv_window_is_brilliancy() -> None:
+    engine = FakeEngine(mate_move=chess.Move.from_uci("a1a8"))
+    service = make_service(engine)
+    response = await service.analyze(
+        AnalysisRequest(fen="6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", move="a1a8")
+    )
+    # The mate is ranked by the engine itself, so a single
+    # analysis suffices and the delta against the best move is zero.
+    assert len(engine.calls) == 1
+    assert response.move.mate_in == 1
+    assert response.move.classification == "brilliancy"
+
+
 async def test_illegal_move_is_rejected() -> None:
     service = make_service(FakeEngine())
     with pytest.raises(IllegalMoveError):
