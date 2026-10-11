@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import chess
 
 from app.config import Settings
@@ -9,6 +11,9 @@ from app.engine import ChessEngine, EngineAnalysis, ScoredMove
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
+    BestMoveRequest,
+    BestMoveResponse,
+    DifficultyLevel,
     MoveClassification,
     MoveEvaluation,
     PositionInfo,
@@ -36,6 +41,25 @@ class InvalidFenError(AnalysisError):
 
 class IllegalMoveError(AnalysisError):
     """The move is not legal in the given position."""
+
+
+class GameOverError(AnalysisError):
+    """The position has no legal moves (checkmate or stalemate)."""
+
+
+@dataclass(frozen=True)
+class LevelSettings:
+    """Engine parameters behind a difficulty level."""
+
+    skill_level: int
+    depth: int
+
+
+LEVEL_SETTINGS: dict[DifficultyLevel, LevelSettings] = {
+    "beginner": LevelSettings(skill_level=1, depth=6),
+    "intermediate": LevelSettings(skill_level=8, depth=12),
+    "advanced": LevelSettings(skill_level=20, depth=18),
+}
 
 
 class AnalysisService:
@@ -130,6 +154,26 @@ class AnalysisService:
         except Exception:
             return False
         return True
+
+    async def best_move(self, request: BestMoveRequest) -> BestMoveResponse:
+        """Choose the opponent's move at the requested difficulty."""
+        board = self._board(request.fen)
+        if board.legal_moves.count() == 0:
+            raise GameOverError("the game is over: no legal moves")
+        level = LEVEL_SETTINGS[request.level]
+        played = await self._engine.play(
+            request.fen,
+            depth=level.depth,
+            max_time_ms=self._settings.default_max_time_ms,
+            skill_level=level.skill_level,
+        )
+        return BestMoveResponse(
+            move=played.move.uci(),
+            san=board.san(played.move),
+            score_cp=played.score_cp,
+            mate_in=played.mate_in,
+            level=request.level,
+        )
 
     def _board(self, fen: str) -> chess.Board:
         """Parse and validate a FEN."""

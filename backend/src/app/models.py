@@ -8,6 +8,8 @@ from app.config import ExplainerMode
 
 MoveClassification = Literal["blunder", "mistake", "inaccuracy", "good", "excellent", "brilliancy"]
 
+DifficultyLevel = Literal["beginner", "intermediate", "advanced"]
+
 
 class AnalysisOptions(BaseModel):
     """Tunable options for a single analysis request."""
@@ -74,3 +76,20 @@ class ErrorResponse(BaseModel):
 
     error: str
     detail: str | None = None
+
+
+class BestMoveRequest(BaseModel):
+    """Position (FEN) for which the opponent should move."""
+
+    fen: str
+    level: DifficultyLevel = "intermediate"
+
+
+class BestMoveResponse(BaseModel):
+    """The opponent's move with its evaluation."""
+
+    move: str
+    san: str
+    score_cp: int | None = None
+    mate_in: int | None = None
+    level: DifficultyLevel
