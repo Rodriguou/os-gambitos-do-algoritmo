@@ -30,7 +30,7 @@ src/app/
   main.py       # app factory, lifespan (engine pool wiring), CORS, error handler
   config.py     # pydantic-settings: everything comes from env vars
   models.py     # Pydantic DTOs (request/response)
-  router.py     # HTTP endpoints: POST /v1/analysis, GET /v1/health
+  router.py     # HTTP endpoints: POST /v1/analysis, POST /v1/best-move, GET /v1/health
   engine.py     # ChessEngine protocol, Stockfish adapter, process pool
   xai.py        # XAI layer: classifier, feature extractor, rule + LLM explainers
   analysis.py   # AnalysisService: orchestration and request validation
@@ -95,6 +95,17 @@ polisher, selected per request via `explanation_mode` (default from
   a lot in chess.
 - Uses a small model, low temperature, and JSON response format.
 
+**Opponent endpoint.** `POST /v1/best-move` returns the engine's move
+for the side to move at a didactic difficulty level (`beginner` /
+`intermediate` / `advanced`, mapped to Skill Level + depth in
+`LEVEL_SETTINGS`). Feedback (`/v1/analysis`) always runs at full
+strength — only the opponent is weakened. Because the pool shares
+processes across requests, `StockfishEngine.play` resets
+`Skill Level` to 20 in a `finally` block, so a weakened opponent can
+never leak into a later analysis. Positions with no legal moves return
+400 (`GameOverError`). The response `score_cp` is the evaluation after
+the AI's move, from the AI's own perspective.
+
 **Server-side validation.** The frontend validates with chess.js, but
 the backend re-validates everything: FEN parsing + `board.is_valid()`,
 and move legality (UCI first, then SAN). Invalid input returns 400
@@ -127,7 +138,7 @@ runtime.
 
 ## Extending
 
-- **New engine**: implement `ChessEngine` (analyse + close).
+- **New engine**: implement `ChessEngine` (analyse + play + close).
 - **New explainer mode**: implement `ExplanationProvider.explain`,
   add a mode to `ExplainerMode`, wire it in `AnalysisService.analyze`.
 - **New feature for prós/contras**: add a `FeatureSpec` to `FEATURES`
