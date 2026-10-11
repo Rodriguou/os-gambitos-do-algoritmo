@@ -6,8 +6,10 @@ avaliação do Stockfish em feedback didático (IA Explicável).
 ## Requisitos
 
 - Python 3.13 ([uv](https://docs.astral.sh/uv/) como gerenciador de dependências)
-- Binário do [Stockfish](https://stockfishchess.org/) instalado e acessível
-  (ou aponte `STOCKFISH_PATH` para o executável)
+- Binário do [Stockfish](https://stockfishchess.org/) — **não versionado**.
+  Convenção local: coloque o executável em `vendor/stockfish.exe` (o
+  `.env` já aponta para lá) ou ajuste `STOCKFISH_PATH`. Em uma máquina
+  hospedeira, repita este passo antes de iniciar a API.
 
 ## Setup
 
