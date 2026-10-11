@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import chess
 
-from app.engine import EngineAnalysis, ScoredMove
+from app.engine import EngineAnalysis, PlayedMove, ScoredMove
 
 
 class FakeEngine:
@@ -58,6 +58,25 @@ class FakeEngine:
                 ),
             )
         return EngineAnalysis(moves=moves)
+
+    async def play(
+        self,
+        fen: str,
+        *,
+        depth: int,
+        max_time_ms: int,
+        skill_level: int,
+    ) -> PlayedMove:
+        """Record the call and return the first legal move deterministically."""
+        self.calls.append({"depth": depth, "max_time_ms": max_time_ms, "skill_level": skill_level})
+        board = chess.Board(fen)
+        moves = list(board.legal_moves)
+        if not moves:
+            raise RuntimeError("no legal moves")
+        move = self.mate_move if self.mate_move in moves else moves[0]
+        if move == self.mate_move:
+            return PlayedMove(move=move, score_cp=None, mate_in=1)
+        return PlayedMove(move=move, score_cp=self.base_score_cp, mate_in=None)
 
     async def close(self) -> None:
         """Do nothing; the fake owns no resources."""

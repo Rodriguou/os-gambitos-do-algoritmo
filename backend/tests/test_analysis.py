@@ -3,9 +3,9 @@
 import chess
 import pytest
 
-from app.analysis import AnalysisService, IllegalMoveError, InvalidFenError
+from app.analysis import AnalysisService, GameOverError, IllegalMoveError, InvalidFenError
 from app.config import Settings
-from app.models import AnalysisOptions, AnalysisRequest
+from app.models import AnalysisOptions, AnalysisRequest, BestMoveRequest
 from app.xai import RuleExplainer
 from tests.fake_engine import FakeEngine
 
@@ -84,3 +84,48 @@ async def test_invalid_fen_is_rejected() -> None:
 
 async def test_service_ping() -> None:
     assert await make_service(FakeEngine()).ping() is True
+
+
+async def test_best_move_returns_first_legal_move() -> None:
+    engine = FakeEngine()
+    service = make_service(engine)
+    response = await service.best_move(BestMoveRequest(fen=chess.STARTING_FEN))
+    board = chess.Board(chess.STARTING_FEN)
+    assert response.move == list(board.legal_moves)[0].uci()
+    assert response.san == board.san(list(board.legal_moves)[0])
+    assert response.level == "intermediate"
+    # The play call records skill_level instead of multi_pv.
+    assert engine.calls[-1]["skill_level"] == 8
+    assert engine.calls[-1]["depth"] == 12
+
+
+async def test_best_move_forwards_difficulty_level() -> None:
+    engine = FakeEngine()
+    service = make_service(engine)
+    response = await service.best_move(BestMoveRequest(fen=chess.STARTING_FEN, level="beginner"))
+    assert response.level == "beginner"
+    assert engine.calls[-1] == {
+        "depth": 6,
+        "max_time_ms": 300,
+        "skill_level": 1,
+    }
+
+
+async def test_best_move_delivers_mate_when_available() -> None:
+    engine = FakeEngine(mate_move=chess.Move.from_uci("a1a8"))
+    service = make_service(engine)
+    response = await service.best_move(BestMoveRequest(fen="6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"))
+    assert response.move == "a1a8"
+    assert response.mate_in == 1
+
+
+async def test_best_move_rejects_finished_game() -> None:
+    service = make_service(FakeEngine())
+    with pytest.raises(GameOverError):
+        await service.best_move(BestMoveRequest(fen="7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"))
+
+
+async def test_best_move_rejects_invalid_fen() -> None:
+    service = make_service(FakeEngine())
+    with pytest.raises(InvalidFenError):
+        await service.best_move(BestMoveRequest(fen="not-a-fen"))

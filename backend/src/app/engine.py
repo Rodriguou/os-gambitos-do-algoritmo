@@ -38,6 +38,15 @@ class EngineAnalysis:
     moves: list[ScoredMove]
 
 
+@dataclass(frozen=True, kw_only=True)
+class PlayedMove:
+    """A move chosen by the engine, with its evaluation."""
+
+    move: chess.Move
+    score_cp: int | None = None
+    mate_in: int | None = None
+
+
 @runtime_checkable
 class ChessEngine(Protocol):
     """Async interface for a chess engine."""
@@ -51,6 +60,17 @@ class ChessEngine(Protocol):
         multi_pv: int,
     ) -> EngineAnalysis:
         """Analyse fen and return up to multi_pv scored moves."""
+        ...
+
+    async def play(
+        self,
+        fen: str,
+        *,
+        depth: int,
+        max_time_ms: int,
+        skill_level: int,
+    ) -> PlayedMove:
+        """Choose a move for the side to move on fen."""
         ...
 
     async def close(self) -> None:
@@ -70,17 +90,21 @@ def _win_rate(info: chess.engine.InfoDict, board: chess.Board) -> float | None:
     return (pov.wins + 0.5 * pov.draws) / total
 
 
+def _score_fields(score: chess.engine.PovScore) -> tuple[int | None, int | None]:
+    """Split a PovScore into (score_cp, mate_in)."""
+    relative = score.relative
+    if isinstance(relative, chess.engine.Mate):
+        return None, relative.moves
+    return relative.score(), None
+
+
 def _scored_move(move: chess.Move, info: chess.engine.InfoDict, board: chess.Board) -> ScoredMove:
     """Convert one Stockfish info entry into a ScoredMove."""
-    score = info.get("score")
     score_cp: int | None = None
     mate_in: int | None = None
+    score = info.get("score")
     if isinstance(score, chess.engine.PovScore):
-        relative = score.relative
-        if isinstance(relative, chess.engine.Mate):
-            mate_in = relative.moves
-        else:
-            score_cp = relative.score()
+        score_cp, mate_in = _score_fields(score)
     return ScoredMove(
         move=move,
         score_cp=score_cp,
@@ -129,6 +153,40 @@ class StockfishEngine:
 
         return await asyncio.to_thread(_run)
 
+    async def play(
+        self,
+        fen: str,
+        *,
+        depth: int,
+        max_time_ms: int,
+        skill_level: int,
+    ) -> PlayedMove:
+        """Choose a move on fen, capped at the given skill level."""
+
+        def _run() -> PlayedMove:
+            board = chess.Board(fen)
+            self._engine.configure({"Skill Level": skill_level})
+            try:
+                result = self._engine.play(
+                    board,
+                    chess.engine.Limit(depth=depth, time=max_time_ms / 1000.0),
+                    info=chess.engine.INFO_SCORE,
+                )
+            finally:
+                # Restore full strength so later analysis requests
+                # are never weakened by a lowered skill level.
+                self._engine.configure({"Skill Level": 20})
+            if result.move is None:
+                raise RuntimeError("engine returned no move")
+            score_cp: int | None = None
+            mate_in: int | None = None
+            score = result.info.get("score")
+            if isinstance(score, chess.engine.PovScore):
+                score_cp, mate_in = _score_fields(score)
+            return PlayedMove(move=result.move, score_cp=score_cp, mate_in=mate_in)
+
+        return await asyncio.to_thread(_run)
+
     async def close(self) -> None:
         """Terminate the Stockfish process."""
         await asyncio.to_thread(self._engine.quit)
@@ -171,6 +229,23 @@ class EnginePool:
         async with self.acquire() as engine:
             return await engine.analyse(
                 fen, depth=depth, max_time_ms=max_time_ms, multi_pv=multi_pv
+            )
+
+    async def play(
+        self,
+        fen: str,
+        *,
+        depth: int,
+        max_time_ms: int,
+        skill_level: int,
+    ) -> PlayedMove:
+        """Choose a move using any available engine from the pool."""
+        async with self.acquire() as engine:
+            return await engine.play(
+                fen,
+                depth=depth,
+                max_time_ms=max_time_ms,
+                skill_level=skill_level,
             )
 
     async def close(self) -> None:

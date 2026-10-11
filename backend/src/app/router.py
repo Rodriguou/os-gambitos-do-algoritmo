@@ -3,7 +3,13 @@
 from fastapi import APIRouter, Depends, Request
 
 from app.analysis import AnalysisService
-from app.models import AnalysisRequest, AnalysisResponse, ErrorResponse
+from app.models import (
+    AnalysisRequest,
+    AnalysisResponse,
+    BestMoveRequest,
+    BestMoveResponse,
+    ErrorResponse,
+)
 
 router = APIRouter()
 
@@ -33,3 +39,16 @@ async def health(
     """Report whether the Stockfish engine pool is healthy."""
     healthy = await service.ping()
     return {"status": "ok" if healthy else "degraded"}
+
+
+@router.post(
+    "/best-move",
+    response_model=BestMoveResponse,
+    responses={400: {"model": ErrorResponse}},
+)
+async def best_move(
+    request: BestMoveRequest,
+    service: AnalysisService = Depends(get_analysis_service),
+) -> BestMoveResponse:
+    """Get the opponent's move at a difficulty level."""
+    return await service.best_move(request)
