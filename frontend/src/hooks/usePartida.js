@@ -63,16 +63,16 @@ export function usePartida() {
     jogo.reset();
     sincronizar();
   }, [jogo, sincronizar]);
+  
+ const desistir = useCallback(() => {
+    // Ainda falta codar
+  }, []);
 
   return {
     ...estado,
     jogar,
     voltarJogada,
     reiniciar,
+    desistir,    
   };
-
-  const desistir = (() =>{
-    // Ainda falta codar
-  })
-
 }
