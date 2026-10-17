@@ -9,13 +9,19 @@ export function ControlesPartida({
   onReiniciar,
   onDesistir,
   onAbrirConfiguracoes,
+  voltarDesabilitado = false,
 }) {
   // Estilo repetido numa const, quatro botões iguais, 1 unico estilo (vou trocar a cor deles) 
-  const botao = "flex items-center justify-center gap-2 rounded-full bg-painel px-5 py-2 font-semibold text-texto-painel shadow-sm transition hover:bg-white";
+  const botao = "flex items-center justify-center gap-2 rounded-full bg-painel px-5 py-2 font-semibold text-texto-painel shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-painel";
 
   return (
     <div className="flex w-full flex-wrap items-center gap-3">
-      <button type="button" className={botao} onClick={onVoltarJogada}>
+      <button
+        type="button"
+        className={botao}
+        onClick={onVoltarJogada}
+        disabled={voltarDesabilitado}
+      >
         <Undo2 className="h-5 w-5" />
         Voltar Jogada
       </button>

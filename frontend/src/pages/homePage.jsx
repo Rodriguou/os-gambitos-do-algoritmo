@@ -5,6 +5,7 @@ import { BarraVantagem } from "../components/barraVantagem";
 import { Tabuleiro } from "../components/tabuleiro";
 import { PainelDicas } from "../components/painelDicas";
 import { ControlesPartida } from "../components/controlesPartida";
+import { AvisoFim } from "../components/avisoFim";
 import { usePartida } from "../hooks/usePartida";
 import { useRelogio } from "../hooks/useRelogio";
 import { MODOS_PARTIDA, NIVEIS_DIFICULDADE, TEMPO_INICIAL } from "../constants/partida";
@@ -24,8 +25,9 @@ export default function HomePage() {
   // Fundo da mesa 
   const [fundo] = useState(FUNDOS[0]);
 
-  // Partida (regras no usePartida.js)
-  const { posicao, turno, acabou, jogar, voltarJogada, reiniciar } = usePartida();
+  // Partida (regras e lance da IA no usePartida.js)
+  const { posicao, turno, acabou, fim, pensando, podeVoltar, jogar, voltarJogada, reiniciar, desistir } =
+    usePartida({ nivel });
 
 
   // Relógio (Só o lado da vez marca tempo, e o relógio para sozinho quando a partidaacaba)
@@ -66,19 +68,19 @@ export default function HomePage() {
             <Tabuleiro
               posicao={posicao}
               onJogar={jogar}
+              travado={pensando || acabou}
               tempoPretas={tempoPretas}
               tempoBrancas={tempoBrancas}
             />
 
             <ControlesPartida
               onVoltarJogada={() => voltarJogada()}
+              voltarDesabilitado={podeVoltar === false}
               onReiniciar={() => {
                 reiniciar();
                 reiniciarRelogio();
               }}
-              onDesistir={() => {
-                // Ainda vou fazer
-              }}
+              onDesistir={() => desistir()}
               onAbrirConfiguracoes={() => {
                 // abrir as configurações (ainda farei)
               }}
@@ -101,6 +103,14 @@ export default function HomePage() {
         modoAtual={modo}
         onFechar={() => setMenuAberto(false)}
         onEscolherModo={escolherModo}
+      />
+
+      <AvisoFim
+        fim={fim}
+        onReiniciar={() => {
+          reiniciar();
+          reiniciarRelogio();
+        }}
       />
     </div>
   );
