@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* ====================================================================
+   Tema do app
+   No Tailwind v4 o tema mora aqui, no CSS (adeus tailwind.config.js).
+   Todo --color-* declarado vira classe: --color-painel => bg-painel,
+   text-painel, border-painel e por aí vai.
+   ==================================================================== */
+@theme {
+  /* Fonte arredondada, pra combinar com o mock. Se um dia quiser a Nunito
+     do Google Fonts, é só ela aparecer primeiro nesta lista. */
+  --font-sans: ui-rounded, "Nunito", "Segoe UI", system-ui, sans-serif;
+
+  /* Painéis claros que ficam por cima da madeira (bege rosado do mock) */
+  --color-painel: #f4e3dd;
+  --color-painel-forte: #e6ecc2; /* card "Ponto Forte" */
+  --color-painel-fraco: #f1d1cb; /* card "Ponto Fraco" */
+  --color-selo: #cbec9a; /* selo "Boa jogada" */
+
+  /* Textos dos cards de análise */
+  --color-texto-painel: #3d2b26;
+  --color-forte: #5b6b1d;
+  --color-fraco: #a13c2f;
+}
+
+/* O navegador adora uma margem padrão. Ele que fique com ela. */
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100svh;
+}
