@@ -15,7 +15,11 @@ function juntar(itens, vazio) {
 // Avaliação em centipawns vira aquele número de todo dia: +0.34, mate em 2
 function formatarAvaliacao(avaliacao) {
   if (!avaliacao) return null;
-  if (avaliacao.mate_in != null) return `mate em ${Math.abs(avaliacao.mate_in)}`;
+  if (avaliacao.mate_in != null) {
+    const lances = Math.abs(avaliacao.mate_in);
+    // Mate negativo é mate que o jogador leva, não que ele dá
+    return avaliacao.mate_in > 0 ? `mate em ${lances}` : `você leva mate em ${lances}`;
+  }
   if (avaliacao.score_cp == null) return null;
 
   const peoes = avaliacao.score_cp / 100;
@@ -39,7 +43,7 @@ export function PainelDicas({
       <Alternador
         ativo={mostrarDica}
         onAlternar={onAlternarDica}
-        rotulo="Dica de próximo lance"
+        rotulo="Mostrar melhor alternativa"
         icone={<Lightbulb className="h-5 w-5" />}
       />
 
@@ -87,12 +91,12 @@ export function PainelDicas({
             variante="fraco"
           />
 
-          {/* A dica só aparece com o switch ligado */}
+          {/* A alternativa ao lance jogado só aparece com o switch ligado */}
           {mostrarDica && sugestao && (
             <CartaoDica
-              titulo={`Próximo lance: faça ${sugestao.san}`}
+              titulo={`Melhor alternativa: ${sugestao.san}`}
               descricao={
-                avaliacaoSugestao ? `Avaliação da posição: ${avaliacaoSugestao}` : null
+                avaliacaoSugestao ? `Avaliação: ${avaliacaoSugestao}` : null
               }
               variante="destaque"
             />
