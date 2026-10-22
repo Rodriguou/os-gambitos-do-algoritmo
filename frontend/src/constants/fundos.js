@@ -1,5 +1,5 @@
 import fundoMadeira from "../assets/fundoMadeira.png";
-import fundoPedra from "../assets/fundoPedra.jpeg";
+import fundoPedra from "../assets/fundoPedra.png";
 
 // Fundos disponíveis pra mesa
 // A ideia é ter varios fundos pra trocar depois, ainda vou fazer a imagens e a lgoica de troca
