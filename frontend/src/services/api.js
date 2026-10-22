@@ -47,3 +47,12 @@ async function post(caminho, corpo, signal) {
 export function pedirLanceAdversario({ fen, level, signal }) {
   return post("/v1/best-move", { fen, level }, signal);
 }
+
+
+export function pedirAnalise({ fen, move, explanationMode = "llm", signal }) {
+  return post(
+    "/v1/analysis",
+    { fen, move, options: { explanation_mode: explanationMode } },
+    signal,
+  );
+}
