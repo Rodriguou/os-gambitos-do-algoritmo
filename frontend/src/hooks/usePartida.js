@@ -24,7 +24,7 @@ function resumirEstado(jogo) {
   a gente pede o lance pro backend (/v1/best-move) e aplica no tabuleiro.
   O jogador é o branco, que joga pelo próprio tabuleiro.
 */
-export function usePartida({ nivel } = {}) {
+export function usePartida({ nivel, onLanceJogador } = {}) {
 
   const [jogo] = useState(() => new Chess());
 
@@ -116,38 +116,48 @@ export function usePartida({ nivel } = {}) {
     }
   }, [jogo, nivel, aplicarUci]);
 
-  /*
-    Tenta executar um lance do jogador ({ from, to })
-    Se o lance deixar a vez com as pretas, a IA responde na sequência.
-  */
+
   const jogar = useCallback(
     ({ from, to, promotion = "q" }) => {
       if (desistiu) return false;
-      const ok = aplicarLance({ from, to, promotion });
-      if (ok && jogo.turn() === "b" && !jogo.isGameOver()) {
-        buscarLanceIA();
-      }
-      return ok;
-    },
-    [desistiu, aplicarLance, jogo, buscarLanceIA],
-  );
 
-  // Desfaz o último lance (bloqueado depois de desistir)
-  const voltarJogada = useCallback(
-    (lances = 1) => {
-      if (desistiu) return;
-      cancelarIA();
-      for (let i = 0; i < lances; i++) {
-        if (!jogo.undo()) break;
-      }
-      sincronizar();
-      // Se o undo devolveu a vez pra IA, ela joga de novo
+      // Guarda a posição ANTES do lance: é isso que a API de análise espera
+      const fenAntes = jogo.fen();
+
+      // Só manda promoção no UCI quando o peão realmente corona
+      const peca = jogo.get(from);
+      const corona = peca?.type === "p" && (to[1] === "8" || to[1] === "1");
+      const uci = corona ? `${from}${to}${promotion}` : `${from}${to}`;
+
+      const ok = aplicarLance({ from, to, promotion });
+      if (!ok) return false;
+
+      // Avisa a página pra analisar o lance e atualizar a barra de vantagem
+      onLanceJogador?.({ fen: fenAntes, move: uci });
+
       if (jogo.turn() === "b" && !jogo.isGameOver()) {
         buscarLanceIA();
       }
+      return true;
     },
-    [desistiu, cancelarIA, jogo, sincronizar, buscarLanceIA],
+    [desistiu, aplicarLance, jogo, buscarLanceIA, onLanceJogador],
   );
+
+
+  // Desfaz a rodada inteira do jogador: o lance dele e a resposta da IA
+  const voltarJogada = useCallback(() => {
+    if (desistiu) return;
+
+    cancelarIA();
+
+    const lances = jogo.turn() === "w" ? 2 : 1;
+    for (let i = 0; i < lances; i++) {
+      if (!jogo.undo()) break;
+    }
+
+    sincronizar();
+  }, [desistiu, cancelarIA, jogo, sincronizar]);
+
 
   const reiniciar = useCallback(() => {
     cancelarIA();
@@ -156,6 +166,7 @@ export function usePartida({ nivel } = {}) {
     sincronizar();
   }, [cancelarIA, jogo, sincronizar]);
 
+  
   // O jogador entrega os pontos; a IA vence sem lance
   const desistir = useCallback(() => {
     cancelarIA();
@@ -173,7 +184,7 @@ export function usePartida({ nivel } = {}) {
     fim,
     acabou: estado.acabou || desistiu,
     pensando,
-    podeVoltar: !desistiu,
+    podeVoltar: !desistiu && jogo.history().length > 0,
     jogar,
     voltarJogada,
     reiniciar,

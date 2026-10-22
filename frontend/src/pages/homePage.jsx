@@ -6,11 +6,13 @@ import { Tabuleiro } from "../components/tabuleiro";
 import { PainelDicas } from "../components/painelDicas";
 import { ControlesPartida } from "../components/controlesPartida";
 import { AvisoFim } from "../components/avisoFim";
+import { ModalConfiguracoes } from "../components/modalConfiguracoes";
 import { usePartida } from "../hooks/usePartida";
 import { useRelogio } from "../hooks/useRelogio";
+import { useAnalise } from "../hooks/useAnalise";
 import { MODOS_PARTIDA, NIVEIS_DIFICULDADE, TEMPO_INICIAL } from "../constants/partida";
-import { DICAS_PLACEHOLDER } from "../constants/dicas";
-import { FUNDOS } from "../constants/fundos";
+import { vantagemDasBrancas } from "../utils/vantagem";
+import { carregarFundo, salvarFundo } from "../utils/fundoSalvo";
 
 
 // Aqui só mora o que é assunto da página estado da interface e a ligação entre os componentes
@@ -19,15 +21,30 @@ import { FUNDOS } from "../constants/fundos";
 export default function HomePage() {
  
   const [menuAberto, setMenuAberto] = useState(false);
+  const [configAberto, setConfigAberto] = useState(false);
   const [modo, setModo] = useState(MODOS_PARTIDA[0]);
   const [nivel, setNivel] = useState(NIVEIS_DIFICULDADE[1]);
 
-  // Fundo da mesa 
-  const [fundo] = useState(FUNDOS[0]);
+  // Fundo da mesa, começa com o que estiver salvo no navegador
+  const [fundo, setFundo] = useState(carregarFundo);
+
+  // Dica de próximo lance começa ligada, pra ninguém esquecer que ela existe
+  const [mostrarDica, setMostrarDica] = useState(true);
+
+  // Análise do último lance (barra de vantagem + cards de dica)
+  const {
+    analise,
+    analisando,
+    erro,
+    analisar,
+    limpar: limparAnalise,
+    usarAzure,
+    definirUsarAzure,
+  } = useAnalise();
 
   // Partida (regras e lance da IA no usePartida.js)
   const { posicao, turno, acabou, fim, pensando, podeVoltar, jogar, voltarJogada, reiniciar, desistir } =
-    usePartida({ nivel });
+    usePartida({ nivel, onLanceJogador: analisar });
 
 
   // Relógio (Só o lado da vez marca tempo, e o relógio para sozinho quando a partidaacaba)
@@ -37,13 +54,25 @@ export default function HomePage() {
     rodando: !acabou,
   });
 
-  // Cards de análise
-  const [dicas] = useState(DICAS_PLACEHOLDER);
+  // Cards de análise saem da resposta da API (useAnalise), não de placeholder
 
   function escolherModo(novoModo) {
     setModo(novoModo);
     setMenuAberto(false);
     // Falta uma função pra realmente trocar o modo (Meu mano Rodrigo, precisamos ver se realmente vai ter algo assim ou é viagem)
+  }
+
+  // Fundo novo vale na hora e fica salvo pra próxima visita
+  function escolherFundo(novoFundo) {
+    setFundo(novoFundo);
+    salvarFundo(novoFundo);
+  }
+
+  // Reinício é sempre a mesma receita: tabuleiro, relógio e análise
+  function comecarNovaPartida() {
+    reiniciar();
+    reiniciarRelogio();
+    limparAnalise();
   }
 
   return (
@@ -62,8 +91,8 @@ export default function HomePage() {
 
         <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 lg:flex-row lg:items-start">
           <section className="flex flex-1 flex-col gap-4">
-            {/* BARRA DE VANTAGEM, VALOR FIXO POR ENQUANTO */}
-            <BarraVantagem vantagem={0.5} />
+            {/* Barra de vantagem: avaliação do último lance analisado */}
+            <BarraVantagem vantagemBrancas={vantagemDasBrancas(analise?.move)} />
 
             <Tabuleiro
               posicao={posicao}
@@ -74,25 +103,26 @@ export default function HomePage() {
             />
 
             <ControlesPartida
-              onVoltarJogada={() => voltarJogada()}
+              onVoltarJogada={() => {
+                voltarJogada();
+                // A posição mudou, então a análise velha não serve mais
+                limparAnalise();
+              }}
               voltarDesabilitado={podeVoltar === false}
-              onReiniciar={() => {
-                reiniciar();
-                reiniciarRelogio();
-              }}
+              onReiniciar={comecarNovaPartida}
               onDesistir={() => desistir()}
-              onAbrirConfiguracoes={() => {
-                // abrir as configurações (ainda farei)
-              }}
+              onAbrirConfiguracoes={() => setConfigAberto(true)}
             />
           </section>
 
           <div className="w-full lg:w-72 xl:w-80">
             <PainelDicas
-              dicas={dicas}
-              onPedirDica={() => {
-                // Logica de chamada da api para dicas (ainda falta fazer)
-              }}
+              analise={analise}
+              analisando={analisando}
+              erro={erro?.message ?? null}
+              usarAzure={usarAzure}
+              mostrarDica={mostrarDica}
+              onAlternarDica={setMostrarDica}
             />
           </div>
         </main>
@@ -105,13 +135,16 @@ export default function HomePage() {
         onEscolherModo={escolherModo}
       />
 
-      <AvisoFim
-        fim={fim}
-        onReiniciar={() => {
-          reiniciar();
-          reiniciarRelogio();
-        }}
+      <ModalConfiguracoes
+        aberto={configAberto}
+        fundoAtual={fundo}
+        usarAzure={usarAzure}
+        onFechar={() => setConfigAberto(false)}
+        onEscolherFundo={escolherFundo}
+        onDefinirUsarAzure={definirUsarAzure}
       />
+
+      <AvisoFim fim={fim} onReiniciar={comecarNovaPartida} />
     </div>
   );
 }
