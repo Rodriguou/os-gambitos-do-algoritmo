@@ -63,15 +63,23 @@ lifespan and is closed on shutdown.
 blunders), the service plays the move on a board copy, analyses the
 resulting position, and flips the opponent's evaluation back to the
 player's perspective. This guarantees the played move always has a
-score comparable to the best move.
+score comparable to the best move. Lines are sorted by score before
+being returned, so `moves[0]` is always the best one; the depth is the
+real search bound and `DEFAULT_MAX_TIME_MS` is only a safety watchdog
+(a tight time cap would cut lines at different depths and make the
+Multi-PV window inconsistent).
 
 **XAI layer (the core of the project).** Three deterministic pieces:
 
-1. `classify_delta` — centipawn delta (played vs. best move) mapped
-   to a class, thresholds in the Lichess convention:
-   `>= +150 brilliancy`, `>= +50 excellent`, `>= -50 good`,
-   `>= -150 inaccuracy`, `>= -300 mistake`, else `blunder`.
-   Mate scores are converted to a large sentinel (`MATE_SCORE`).
+1. `classify_move` — loss of win probability between the played move
+   and the best move, obtained by converting the centipawn score through
+   the same logistic curve used by the frontend advantage bar (Stockfish
+   WDL is returned for display, but swings too much across Multi-PV lines
+   to drive the class), mapped to a class:
+   `<= 2 p.p. excellent`, `<= 5 good`, `<= 10 inaccuracy`,
+   `<= 20 mistake`, else `blunder`. Delivering mate is a `brilliancy`.
+   The loss is clamped at zero, so inconsistent Multi-PV lines can
+   never fake a brilliancy.
 2. `extract_features` — pre/post-move deltas of interpretable
    features computed with python-chess: material balance, mobility
    (attacked squares), king safety (attackers on the king square),

@@ -21,7 +21,10 @@ class Settings(BaseSettings):
     stockfish_pool_size: int = 4
 
     default_depth: int = 18
-    default_max_time_ms: int = 300
+    # Safety watchdog for the engine, not the normal search bound: the
+    # depth above is what actually stops the search. A small cap here
+    # would cut lines at different depths and make Multi-PV inconsistent.
+    default_max_time_ms: int = 3_000
     default_multi_pv: int = 3
 
     explainer_default_mode: ExplainerMode = "rule"

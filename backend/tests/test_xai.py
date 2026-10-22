@@ -4,7 +4,7 @@ import chess
 import pytest
 
 from app.config import Settings
-from app.engine import ScoredMove
+from app.engine import ScoredMove, score_value
 from app.models import Explanation
 from app.xai import (
     ExplanationContext,
@@ -12,25 +12,62 @@ from app.xai import (
     LLMExplainer,
     MoveSnapshot,
     RuleExplainer,
-    classify_delta,
+    classify_move,
     extract_features,
     material_balance,
-    score_value,
+    win_rate_from_score,
 )
 
 
-def test_classify_delta_thresholds() -> None:
-    assert classify_delta(200) == "brilliancy"
-    assert classify_delta(150) == "brilliancy"
-    assert classify_delta(80) == "excellent"
-    assert classify_delta(50) == "excellent"
-    assert classify_delta(10) == "good"
-    assert classify_delta(-10) == "good"
-    assert classify_delta(-60) == "inaccuracy"
-    assert classify_delta(-150) == "inaccuracy"
-    assert classify_delta(-200) == "mistake"
-    assert classify_delta(-300) == "mistake"
-    assert classify_delta(-301) == "blunder"
+def _scored(
+    *, score_cp: int | None = None, mate_in: int | None = None, win_rate: float | None = None
+) -> ScoredMove:
+    return ScoredMove(
+        move=chess.Move.from_uci("a2a3"),
+        score_cp=score_cp,
+        mate_in=mate_in,
+        win_rate=win_rate,
+        pv=[],
+    )
+
+
+def test_classify_move_keeps_the_best_move_as_excellent() -> None:
+    best = _scored(score_cp=30)
+    assert classify_move(best, best) == "excellent"
+
+
+def test_classify_move_uses_win_probability_loss_thresholds() -> None:
+    best = _scored(score_cp=0)
+    assert classify_move(_scored(score_cp=-10), best) == "excellent"  # ~0.9 p.p.
+    assert classify_move(_scored(score_cp=-40), best) == "good"  # ~3.7 p.p.
+    assert classify_move(_scored(score_cp=-80), best) == "inaccuracy"  # ~7.3 p.p.
+    assert classify_move(_scored(score_cp=-170), best) == "mistake"  # ~15 p.p.
+    assert classify_move(_scored(score_cp=-400), best) == "blunder"  # ~31 p.p.
+
+
+def test_classify_move_clamps_positive_delta() -> None:
+    # Inconsistent Multi-PV lines must never fake a brilliancy.
+    assert classify_move(_scored(score_cp=40), _scored(score_cp=0)) == "excellent"
+
+
+def test_classify_move_ignores_noisy_engine_wdl() -> None:
+    # WDL swings a lot across Multi-PV lines; the cp curve is the stable source.
+    assert (
+        classify_move(_scored(score_cp=-10, win_rate=0.10), _scored(score_cp=0, win_rate=0.90))
+        == "excellent"
+    )
+
+
+def test_classify_move_handles_mates() -> None:
+    assert classify_move(_scored(mate_in=2), _scored(score_cp=0)) == "brilliancy"
+    assert classify_move(_scored(mate_in=-3), _scored(score_cp=0)) == "blunder"
+
+
+def test_win_rate_from_score_is_symmetric() -> None:
+    assert win_rate_from_score(0) == 0.5
+    assert win_rate_from_score(100) > 0.5
+    assert win_rate_from_score(-100) < 0.5
+    assert win_rate_from_score(-100) == pytest.approx(1 - win_rate_from_score(100))
 
 
 def test_score_value_converts_mates() -> None:

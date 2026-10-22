@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import chess
 
 from app.config import Settings
-from app.engine import ChessEngine, EngineAnalysis, ScoredMove
+from app.engine import ChessEngine, EngineAnalysis, ScoredMove, score_value
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -24,10 +24,9 @@ from app.xai import (
     LLMExplainer,
     MoveSnapshot,
     RuleExplainer,
-    classify_delta,
+    classify_move,
     extract_features,
     material_balance,
-    score_value,
 )
 
 
@@ -101,13 +100,8 @@ class AnalysisService:
         if played is None:
             played = await self._evaluate_played_move(board, move, depth, max_time_ms)
 
-        best = analysis.moves[0]
-        if played.mate_in is not None and played.mate_in > 0:
-            # Delivering mate ends the game: always a brilliancy,
-            # even though the delta against the best move is zero.
-            classification: MoveClassification = "brilliancy"
-        else:
-            classification = classify_delta(score_value(played) - score_value(best))
+        best = max(analysis.moves, key=score_value)
+        classification = classify_move(played, best)
 
         context = ExplanationContext(
             fen=request.fen,
