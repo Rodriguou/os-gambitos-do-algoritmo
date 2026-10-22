@@ -28,7 +28,7 @@ export default function HomePage() {
   // Fundo da mesa, começa com o que estiver salvo no navegador
   const [fundo, setFundo] = useState(carregarFundo);
 
-  // Dica de próximo lance começa ligada, pra ninguém esquecer que ela existe
+  // Melhor alternativa ao lance jogado começa visível, pra ninguém esquecer que ela existe
   const [mostrarDica, setMostrarDica] = useState(true);
 
   // Análise do último lance (barra de vantagem + cards de dica)
