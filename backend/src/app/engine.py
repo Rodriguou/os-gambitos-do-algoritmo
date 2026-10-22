@@ -38,6 +38,18 @@ class EngineAnalysis:
     moves: list[ScoredMove]
 
 
+MATE_SCORE = 100_000
+
+
+def score_value(move: ScoredMove) -> int:
+    """Numeric evaluation of a scored move, converting mates to a large score."""
+    if move.mate_in is not None:
+        if move.mate_in > 0:
+            return MATE_SCORE - move.mate_in
+        return -(MATE_SCORE + move.mate_in)
+    return move.score_cp or 0
+
+
 @dataclass(frozen=True, kw_only=True)
 class PlayedMove:
     """A move chosen by the engine, with its evaluation."""
@@ -149,6 +161,11 @@ class StockfishEngine:
                 pv = info.get("pv")
                 if pv:
                     moves.append(_scored_move(pv[0], info, board))
+            # python-chess may report the lines at slightly different
+            # depths, so the engine order is not guaranteed to be sorted
+            # by score. Sorting here keeps "best move" and "best
+            # alternative" consistent even when the time cap kicks in.
+            moves.sort(key=score_value, reverse=True)
             return EngineAnalysis(moves=moves)
 
         return await asyncio.to_thread(_run)

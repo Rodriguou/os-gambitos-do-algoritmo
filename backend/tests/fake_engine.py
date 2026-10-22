@@ -5,6 +5,7 @@ from __future__ import annotations
 import chess
 
 from app.engine import EngineAnalysis, PlayedMove, ScoredMove
+from app.xai import win_rate_from_score
 
 
 class FakeEngine:
@@ -39,7 +40,7 @@ class FakeEngine:
                 move=move,
                 score_cp=self.base_score_cp - index * 20,
                 mate_in=None,
-                win_rate=0.5,
+                win_rate=win_rate_from_score(self.base_score_cp - index * 20),
                 depth=depth,
                 pv=[move],
             )

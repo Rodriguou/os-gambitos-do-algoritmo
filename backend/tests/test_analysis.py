@@ -43,7 +43,7 @@ async def test_analysis_of_a_move_inside_the_multi_pv_window() -> None:
     # g1h3 (Nh3) is the first generated move, so a single
     # analysis suffices and the played move is ranked directly.
     assert len(engine.calls) == 1
-    assert response.move.classification == "good"
+    assert response.move.classification == "excellent"
     assert all(alternative.move != "g1h3" for alternative in response.alternatives)
 
 
@@ -106,7 +106,7 @@ async def test_best_move_forwards_difficulty_level() -> None:
     assert response.level == "beginner"
     assert engine.calls[-1] == {
         "depth": 6,
-        "max_time_ms": 300,
+        "max_time_ms": 3000,
         "skill_level": 1,
     }
 

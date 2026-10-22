@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,19 +25,23 @@ import chess
 from openai import AzureOpenAI
 
 from app.config import Settings
-from app.engine import ScoredMove
+from app.engine import ScoredMove, score_value
 from app.models import Explanation, MoveClassification
 
-MATE_SCORE = 100_000
+# Classification is based on how much win probability the move gave away,
+# not on raw centipawns: losing 100cp from a winning position is not the
+# same as losing 100cp from an equal one. Each constant is the maximum
+# loss in win probability (0..1) still allowed for that class.
+EXCELLENT_MAX_LOSS = 0.02
+GOOD_MAX_LOSS = 0.05
+INACCURACY_MAX_LOSS = 0.10
+MISTAKE_MAX_LOSS = 0.20
 
-# Centipawn deltas (played move vs. best move), from the player's
-# perspective. Thresholds follow the convention used by chess UIs
-# such as Lichess.
-BRILLIANTY_DELTA = 150
-EXCELLENT_DELTA = 50
-INACCURACY_DELTA = -50
-MISTAKE_DELTA = -150
-BLUNDER_DELTA = -300
+# Centipawns are converted to win probability with the same logistic
+# curve used by the frontend advantage bar. Stockfish's WDL is exposed to
+# the user as "chance de vitória", but it is too noisy across Multi-PV
+# lines at didactic depths to drive the classification.
+WIN_RATE_SLOPE = 0.00368208
 
 PIECE_VALUES: dict[int, float] = {
     chess.PAWN: 1,
@@ -48,28 +53,35 @@ PIECE_VALUES: dict[int, float] = {
 CENTER_SQUARES = frozenset({chess.D4, chess.E4, chess.D5, chess.E5})
 
 
-def classify_delta(delta_cp: int) -> MoveClassification:
-    """Classify a move by its centipawn delta against the best move."""
-    if delta_cp >= BRILLIANTY_DELTA:
+def win_rate_from_score(score_cp: int) -> float:
+    """Approximate win probability (0..1) from a centipawn score."""
+    return 1 / (1 + math.exp(-WIN_RATE_SLOPE * score_cp))
+
+
+def _win_rate(move: ScoredMove) -> float:
+    """Win probability for the side that made the move."""
+    return win_rate_from_score(score_value(move))
+
+
+def classify_move(played: ScoredMove, best: ScoredMove) -> MoveClassification:
+    """Classify a move by how much winning chance it gave away to the best move."""
+    # Delivering mate ends the game: always a brilliancy, even though the
+    # delta against the best move is zero.
+    if played.mate_in is not None and played.mate_in > 0:
         return "brilliancy"
-    if delta_cp >= EXCELLENT_DELTA:
+
+    # Clamped at zero: inconsistent Multi-PV lines must never turn a move
+    # into a brilliancy just because it outscored the reported best move.
+    loss = max(0.0, _win_rate(best) - _win_rate(played))
+    if loss <= EXCELLENT_MAX_LOSS:
         return "excellent"
-    if delta_cp >= INACCURACY_DELTA:
+    if loss <= GOOD_MAX_LOSS:
         return "good"
-    if delta_cp >= MISTAKE_DELTA:
+    if loss <= INACCURACY_MAX_LOSS:
         return "inaccuracy"
-    if delta_cp >= BLUNDER_DELTA:
+    if loss <= MISTAKE_MAX_LOSS:
         return "mistake"
     return "blunder"
-
-
-def score_value(move: ScoredMove) -> int:
-    """Numeric evaluation of a scored move, converting mates to a large score."""
-    if move.mate_in is not None:
-        if move.mate_in > 0:
-            return MATE_SCORE - move.mate_in
-        return -(MATE_SCORE + move.mate_in)
-    return move.score_cp or 0
 
 
 def _material(board: chess.Board, color: chess.Color) -> float:
@@ -246,6 +258,8 @@ class RuleExplainer:
         parts = [CLASSIFICATION_PHRASES[context.classification]]
         if context.mate_in is not None and context.mate_in > 0:
             parts.append(f"Xeque-mate em {context.mate_in} lance(s).")
+        elif context.mate_in is not None and context.mate_in < 0:
+            parts.append(f"Você leva mate em {abs(context.mate_in)} lance(s).")
         elif context.score_cp is not None:
             parts.append(f"Avaliação da jogada: {context.score_cp / 100:+.2f}.")
         if context.win_rate is not None:
