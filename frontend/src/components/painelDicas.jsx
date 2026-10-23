@@ -1,52 +1,26 @@
-import { Lightbulb } from "lucide-react";
 import { CartaoDica } from "./cartaoDica";
-import { Alternador } from "./alternador";
 import { ROTULOS_CLASSIFICACAO } from "../constants/dicas";
 
 
 // Painel de análise do último lance.
-// A resposta da API chega pronta da página: aqui só decidimos como mostrar
+// A resposta da API chega pronta da página: aqui só decidimos como mostrar.
 
 // Pros/cons chegam como listas; o cartão mostra tudo numa linha só
 function juntar(itens, vazio) {
   return itens?.length ? itens.join(" · ") : vazio;
 }
 
-// Avaliação em centipawns vira aquele número de todo dia: +0.34, mate em 2
-function formatarAvaliacao(avaliacao) {
-  if (!avaliacao) return null;
-  if (avaliacao.mate_in != null) {
-    const lances = Math.abs(avaliacao.mate_in);
-    // Mate negativo é mate que o jogador leva, não que ele dá
-    return avaliacao.mate_in > 0 ? `mate em ${lances}` : `você leva mate em ${lances}`;
-  }
-  if (avaliacao.score_cp == null) return null;
-
-  const peoes = avaliacao.score_cp / 100;
-  return `${peoes > 0 ? "+" : ""}${peoes.toFixed(2)}`;
-}
-
 export function PainelDicas({
   analise,
-  mostrarDica,
-  onAlternarDica,
   analisando = false,
   erro = null,
-  usarAzure = true,
+  usarAzure = false,
 }) {
   const explicacao = analise?.explanation;
-  const sugestao = analise?.alternatives?.[0];
-  const avaliacaoSugestao = formatarAvaliacao(sugestao);
+  const lance = analise?.move?.san;
 
   return (
     <aside className="flex w-full flex-col gap-2">
-      <Alternador
-        ativo={mostrarDica}
-        onAlternar={onAlternarDica}
-        rotulo="Mostrar melhor alternativa"
-        icone={<Lightbulb className="h-5 w-5" />}
-      />
-
       {analisando && (
         <p className="px-1 text-xs text-white/80">Analisando o último lance...</p>
       )}
@@ -72,35 +46,27 @@ export function PainelDicas({
 
       {analise && explicacao && (
         <>
+          {/* 1. Avaliação geral da jogada */}
           <CartaoDica
-            titulo={analise.move?.san ?? "Jogada"}
-            descricao={explicacao.summary}
+            titulo="Avaliação geral"
+            descricao={lance ? `${lance} · ${explicacao.summary}` : explicacao.summary}
             selo={ROTULOS_CLASSIFICACAO[explicacao.classification]}
             variante="destaque"
           />
 
+          {/* 2. O que foi bom */}
           <CartaoDica
-            titulo="Ponto Forte"
+            titulo="Pontos positivos"
             descricao={juntar(explicacao.pros, "Nenhum destaque por aqui.")}
             variante="forte"
           />
 
+          {/* 3. O que custou (ou pode custar) a posição */}
           <CartaoDica
-            titulo="Ponto Fraco"
+            titulo="Pontos negativos"
             descricao={juntar(explicacao.cons, "Nada grave nesse lance.")}
             variante="fraco"
           />
-
-          {/* A alternativa ao lance jogado só aparece com o switch ligado */}
-          {mostrarDica && sugestao && (
-            <CartaoDica
-              titulo={`Melhor alternativa: ${sugestao.san}`}
-              descricao={
-                avaliacaoSugestao ? `Avaliação: ${avaliacaoSugestao}` : null
-              }
-              variante="destaque"
-            />
-          )}
         </>
       )}
     </aside>

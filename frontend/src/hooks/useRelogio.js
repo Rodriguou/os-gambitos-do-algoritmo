@@ -1,35 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 
 /*
-  Relógio de jogo de verdade: só o lado de quem é a vez marca tempo
-  Recebe o turno do chess.js ("w" ou "b") e devolve os dois relógios
-*/
-export function useRelogio({ turno, tempoInicial = 0, rodando = true }) {
+  Um único relógio de partida, crescente.
 
-  const [tempos, setTempos] = useState(() => ({
-    w: tempoInicial,
-    b: tempoInicial,
-  }));
+  Ele começa em 00:00, anda enquanto a partida está viva e para sozinho
+  no fim (xeque-mate, empate ou desistência). Voltar uma jogada não zera
+  o tempo; só uma partida nova faz isso.
+*/
+export function useRelogioPartida({ rodando = true } = {}) {
+  const [segundos, setSegundos] = useState(0);
 
   useEffect(() => {
-
-    if (!rodando || !turno) return;
+    if (!rodando) return;
 
     const intervalo = setInterval(() => {
-      setTempos((atual) => ({ ...atual, [turno]: atual[turno] + 1 }));
+      setSegundos((atual) => atual + 1);
     }, 1000);
 
     return () => clearInterval(intervalo);
-  }, [rodando, turno]);
+  }, [rodando]);
 
-  // Zera os dois cronômetros de volta pra base
-  const reiniciarRelogio = useCallback(() => {
-    setTempos({ w: tempoInicial, b: tempoInicial });
-  }, [tempoInicial]);
+  const reiniciarRelogio = useCallback(() => setSegundos(0), []);
 
-  return {
-    tempoBrancas: tempos.w,
-    tempoPretas: tempos.b,
-    reiniciarRelogio,
-  };
+  return { tempoPartida: segundos, reiniciarRelogio };
 }
