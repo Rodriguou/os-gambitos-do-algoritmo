@@ -106,9 +106,9 @@ async def test_best_move_forwards_difficulty_level() -> None:
     response = await service.best_move(BestMoveRequest(fen=chess.STARTING_FEN, level="beginner"))
     assert response.level == "beginner"
     assert engine.calls[-1] == {
-        "depth": 6,
+        "depth": 2,
         "max_time_ms": 3000,
-        "skill_level": 1,
+        "skill_level": 0,
     }
 
 
