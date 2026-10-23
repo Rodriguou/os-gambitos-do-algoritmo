@@ -61,7 +61,7 @@ class LevelSettings:
 
 
 LEVEL_SETTINGS: dict[DifficultyLevel, LevelSettings] = {
-    "beginner": LevelSettings(skill_level=1, depth=6),
+    "beginner": LevelSettings(skill_level=0, depth=2),
     "intermediate": LevelSettings(skill_level=8, depth=12),
     "advanced": LevelSettings(skill_level=20, depth=18),
 }
