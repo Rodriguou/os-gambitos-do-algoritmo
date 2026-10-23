@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { NIVEIS_DIFICULDADE } from "../constants/partida";
 
 
-// Seletor "Nível: Intermediário" do cabeçalho
+// Seletor de nível do cabeçalho (Fácil, Intermediário ou Difícil)
 export function SeletorNivel({ nivelAtual, onTrocarNivel }) {
   const [aberto, setAberto] = useState(false);
   const containerRef = useRef(null);

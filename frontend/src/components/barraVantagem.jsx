@@ -1,4 +1,4 @@
-// Barra "Vantagem da IA"
+// Barra de vantagem da posição atual
 // Recebe a chance das brancas (0 = IA dominando, 1 = jogador dominando)
 // Desenho de cabo de guerra: o branco cresce da direita, o escuro que sobra é a IA
 
@@ -8,7 +8,7 @@ export function BarraVantagem({ vantagemBrancas = 0.5 }) {
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-sm text-white">Vantagem da IA</span>
+      <span className="text-sm text-white">Vantagem na posição</span>
 
       <div className="relative h-8 overflow-hidden rounded-lg bg-black/60">
         {/* O branco avança da direita; o que sobra escuro é a vantagem das pretas */}

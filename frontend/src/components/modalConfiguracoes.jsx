@@ -1,17 +1,19 @@
 import { useEffect } from "react";
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, RotateCcw, Sparkles, X } from "lucide-react";
 import { FUNDOS } from "../constants/fundos";
 import { Alternador } from "./alternador";
 
 // Modal de configurações da mesa
-// Fundo e tradução da Azure moram aqui, num lugar só, sem poluir o tabuleiro
+// Fundo, tradução da Azure e partida nova moram aqui, num lugar só
 export function ModalConfiguracoes({
   aberto,
   fundoAtual,
-  usarAzure = true,
+  usarAzure = false,
+  azureDisponivel = false,
   onFechar,
   onEscolherFundo,
   onDefinirUsarAzure,
+  onReiniciar,
 }) {
   // Esc fecha
   useEffect(() => {
@@ -93,12 +95,31 @@ export function ModalConfiguracoes({
               onAlternar={onDefinirUsarAzure}
               rotulo="Tradução da Azure"
               icone={<Sparkles className="h-5 w-5" />}
+              desabilitado={!azureDisponivel}
             />
           </div>
 
           <p className="mt-2 px-1 text-xs">
-            Desligado mostra a explicação determinística do Stockfish. Se a Azure
-            falhar, o backend volta sozinho pro Stockfish.
+            {azureDisponivel
+              ? "Desligado mostra a explicação determinística do Stockfish. Se a Azure falhar, o backend volta sozinho pro Stockfish."
+              : "Azure não configurada no backend. Por enquanto, a explicação vem do Stockfish puro."}
+          </p>
+        </div>
+
+        <div className="mt-6 border-t border-black/10 pt-4">
+          <p className="text-sm">Partida</p>
+
+          <button
+            type="button"
+            onClick={onReiniciar}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-painel-forte px-4 py-2 font-semibold text-forte shadow-sm transition hover:brightness-95"
+          >
+            <RotateCcw className="h-5 w-5" />
+            Nova partida
+          </button>
+
+          <p className="mt-2 px-1 text-xs">
+            Zera o tabuleiro, o relógio e a análise. Você vai confirmar antes.
           </p>
         </div>
       </div>

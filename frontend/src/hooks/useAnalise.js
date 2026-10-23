@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { pedirAnalise } from "../services/api";
 
 /*
-  Estado da análise do último lance do jogador.
-  A página usa o resultado em dois lugares: a barra de vantagem e os cards de dica
+  Estado da análise do último lance do jogador, que alimenta os cards de dica.
+  A barra de vantagem tem a própria avaliação da posição atual
+  (useAvaliacaoPosicao.js); esta análise é sobre o lance já jogado.
 
   Cada lance novo cancela a análise anterior (AbortController), porque não faz
   sentido deixar uma resposta velha chegar depois e sobrescrever a posição atual
 */
-export function useAnalise({ usarAzureInicial = true } = {}) {
+export function useAnalise({ usarAzureInicial = false } = {}) {
   const [analise, setAnalise] = useState(null);
   const [analisando, setAnalisando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -37,6 +38,10 @@ export function useAnalise({ usarAzureInicial = true } = {}) {
     controladorRef.current = controller;
     setAnalisando(true);
     setErro(null);
+    // A análise anterior era de outro lance (ou de outra posição). Some com
+    // ela na hora: cards velhos ao lado de um tabuleiro novo confundem mais
+    // do que ajudam.
+    setAnalise(null);
 
     try {
       const resposta = await pedirAnalise({
@@ -50,7 +55,7 @@ export function useAnalise({ usarAzureInicial = true } = {}) {
       setAnalise(resposta);
     } catch (falha) {
       if (falha?.name === "AbortError") return;
-      // Mantém a última análise boa na tela e só avisa que a nova falhou
+      // A análise antiga já foi limpa ao começar esta; resta avisar o erro
       setErro(falha);
     } finally {
       if (controladorRef.current === controller) {
@@ -65,7 +70,13 @@ export function useAnalise({ usarAzureInicial = true } = {}) {
   // Se já tem um lance analisado, refaz na hora pro texto acompanhar o switch
   const definirUsarAzure = useCallback(
     (ativo) => {
-      modoRef.current = ativo ? "llm" : "rule";
+      const modo = ativo ? "llm" : "rule";
+      if (modoRef.current === modo) {
+        setUsarAzureState(ativo);
+        return;
+      }
+
+      modoRef.current = modo;
       setUsarAzureState(ativo);
 
       if (ultimoPedidoRef.current) {

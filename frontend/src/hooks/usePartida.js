@@ -37,6 +37,10 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
   // O jogador desistiu: fim de partida que não vem do tabuleiro
   const [desistiu, setDesistiu] = useState(false);
 
+  // A IA falhou (offline, 500, timeout...). A partida fica pausada até
+  // o jogador tentar de novo, voltar a jogada ou reiniciar.
+  const [erroIA, setErroIA] = useState(null);
+
   // Request da IA em andamento, pra poder cancelar quando a posição muda
   const controladorRef = useRef(null);
 
@@ -95,6 +99,7 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
     const controller = new AbortController();
     controladorRef.current = controller;
     setPensando(true);
+    setErroIA(null);
 
     try {
       const resposta = await pedirLanceAdversario({
@@ -104,10 +109,14 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
       });
       // Só aplica se este ainda é o request atual (não voltou/reiniciou/desistiu)
       if (controladorRef.current !== controller) return;
-      aplicarUci(resposta.move);
+      // Um lance ilegal vindo da API não pode deixar a partida travada sem aviso
+      if (!aplicarUci(resposta.move)) {
+        setErroIA(new Error("A IA devolveu um lance ilegal."));
+      }
     } catch (erro) {
       if (erro?.name === "AbortError") return;
       console.error("Falha ao pedir o lance da IA:", erro);
+      if (controladorRef.current === controller) setErroIA(erro);
     } finally {
       if (controladorRef.current === controller) {
         controladorRef.current = null;
@@ -116,10 +125,19 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
     }
   }, [jogo, nivel, aplicarUci]);
 
+  // Botão "Tentar de novo" do aviso de erro da IA.
+  const tentarNovamenteIA = useCallback(() => {
+    if (desistiu || jogo.isGameOver() || jogo.turn() !== "b") return;
+    buscarLanceIA();
+  }, [desistiu, jogo, buscarLanceIA]);
+
 
   const jogar = useCallback(
     ({ from, to, promotion = "q" }) => {
       if (desistiu) return false;
+      // O jogador é sempre as brancas. Isso também impede um lance preto
+      // enquanto a IA está pausada por erro.
+      if (jogo.turn() !== "w") return false;
 
       // Guarda a posição ANTES do lance: é isso que a API de análise espera
       const fenAntes = jogo.fen();
@@ -149,6 +167,7 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
     if (desistiu) return;
 
     cancelarIA();
+    setErroIA(null);
 
     const lances = jogo.turn() === "w" ? 2 : 1;
     for (let i = 0; i < lances; i++) {
@@ -161,6 +180,7 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
 
   const reiniciar = useCallback(() => {
     cancelarIA();
+    setErroIA(null);
     jogo.reset();
     setDesistiu(false);
     sincronizar();
@@ -170,6 +190,7 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
   // O jogador entrega os pontos; a IA vence sem lance
   const desistir = useCallback(() => {
     cancelarIA();
+    setErroIA(null);
     setDesistiu(true);
   }, [cancelarIA]);
 
@@ -184,8 +205,10 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
     fim,
     acabou: estado.acabou || desistiu,
     pensando,
+    erroIA,
     podeVoltar: !desistiu && jogo.history().length > 0,
     jogar,
+    tentarNovamenteIA,
     voltarJogada,
     reiniciar,
     desistir,

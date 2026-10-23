@@ -1,4 +1,4 @@
-import { Flag, RotateCcw, Settings, Undo2 } from "lucide-react";
+import { Flag, Settings, Undo2 } from "lucide-react";
 
 
 // Barra de botões embaixo do tabuleiro.
@@ -6,12 +6,11 @@ import { Flag, RotateCcw, Settings, Undo2 } from "lucide-react";
 
 export function ControlesPartida({
   onVoltarJogada,
-  onReiniciar,
   onDesistir,
   onAbrirConfiguracoes,
   voltarDesabilitado = false,
 }) {
-  // Estilo repetido numa const, quatro botões iguais, 1 unico estilo (vou trocar a cor deles) 
+  // Estilo repetido numa const: todos os botões falam a mesma língua
   const botao = "flex items-center justify-center gap-2 rounded-full bg-painel px-5 py-2 font-semibold text-texto-painel shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-painel";
 
   return (
@@ -24,11 +23,6 @@ export function ControlesPartida({
       >
         <Undo2 className="h-5 w-5" />
         Voltar Jogada
-      </button>
-
-      <button type="button" className={botao} onClick={onReiniciar}>
-        <RotateCcw className="h-5 w-5" />
-        Reiniciar
       </button>
 
       <button type="button" className={botao} onClick={onDesistir}>

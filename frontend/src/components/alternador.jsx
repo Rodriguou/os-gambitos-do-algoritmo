@@ -1,13 +1,16 @@
 // toogle switch
 
-export function Alternador({ ativo, onAlternar, rotulo, icone }) {
+export function Alternador({ ativo, onAlternar, rotulo, icone, desabilitado = false }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={ativo}
+      disabled={desabilitado}
       onClick={() => onAlternar?.(!ativo)}
-      className="flex w-full items-center justify-between gap-3 rounded-2xl bg-painel px-4 py-2 font-semibold text-texto-painel shadow-sm transition hover:bg-white"
+      className={`flex w-full items-center justify-between gap-3 rounded-2xl bg-painel px-4 py-2 font-semibold text-texto-painel shadow-sm transition ${
+        desabilitado ? "cursor-not-allowed opacity-50" : "hover:bg-white"
+      }`}
     >
       <span className="flex items-center gap-2">
         {icone}
