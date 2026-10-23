@@ -15,15 +15,10 @@ export class ErroApi extends Error {
   }
 }
 
-async function post(caminho, corpo, signal) {
+async function requisitar(caminho, opcoes = {}) {
   let resposta;
   try {
-    resposta = await fetch(`${API_URL}${caminho}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(corpo),
-      signal,
-    });
+    resposta = await fetch(`${API_URL}${caminho}`, opcoes);
   } catch (erro) {
     // AbortError é cancelamento nosso, então deixa subir pro chamador ignorar
     if (erro?.name === "AbortError") throw erro;
@@ -38,6 +33,19 @@ async function post(caminho, corpo, signal) {
   return resposta.json();
 }
 
+function post(caminho, corpo, signal) {
+  return requisitar(caminho, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corpo),
+    signal,
+  });
+}
+
+function get(caminho, signal) {
+  return requisitar(caminho, { signal });
+}
+
 /*
   Lance do adversário IA para a posição atual.
   Request: { fen, level } (level: "beginner" | "intermediate" | "advanced")
@@ -49,10 +57,29 @@ export function pedirLanceAdversario({ fen, level, signal }) {
 }
 
 
-export function pedirAnalise({ fen, move, explanationMode = "llm", signal }) {
+export function pedirAnalise({ fen, move, explanationMode = "rule", signal }) {
   return post(
     "/v1/analysis",
     { fen, move, options: { explanation_mode: explanationMode } },
     signal,
   );
+}
+
+/*
+  Avaliação da posição atual, sempre do ponto de vista das brancas.
+  É a fonte da barra de vantagem: ela reflete o tabuleiro de agora,
+  não o lance que acabou de ser analisado.
+  Response: { fen, turn, score_cp, mate_in, win_rate, depth }
+*/
+export function pedirAvaliacaoPosicao({ fen, depth, signal }) {
+  // Sem depth, o backend usa POSITION_EVAL_DEPTH (default 12)
+  return post("/v1/evaluate", { fen, depth }, signal);
+}
+
+/*
+  O que o backend consegue oferecer neste ambiente.
+  llm_available = false quando as credenciais da Azure não estão configuradas.
+*/
+export function pedirConfig({ signal } = {}) {
+  return get("/v1/config", signal);
 }
