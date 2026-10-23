@@ -32,6 +32,7 @@ from app.xai import (
     extract_features,
     material_balance,
     win_rate_from_score,
+    win_rate_loss,
 )
 
 
@@ -115,6 +116,7 @@ class AnalysisService:
             score_cp=played.score_cp,
             mate_in=played.mate_in,
             win_rate=played.win_rate,
+            win_rate_loss=win_rate_loss(played, best),
             alternatives=[
                 MoveSnapshot(
                     san=board.san(scored.move),

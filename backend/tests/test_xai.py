@@ -109,14 +109,90 @@ async def test_rule_explainer_builds_feedback() -> None:
         score_cp=50,
         mate_in=None,
         win_rate=0.52,
+        win_rate_loss=0.0,
         alternatives=[MoveSnapshot(san="d4", score_cp=30, mate_in=None)],
-        features=[FeatureDelta(name="center_control", delta=2.0, unit="squares")],
+        features=[FeatureDelta(name="center_control", delta=2.0, unit="casas")],
     )
     explanation = await RuleExplainer().explain(context)
     assert explanation.mode == "rule"
     assert explanation.classification == "excellent"
     assert any("centro" in pro for pro in explanation.pros)
-    assert "Melhor alternativa: d4" in explanation.summary
+    assert "Melhor alternativa" not in explanation.summary
+
+
+async def test_rule_explainer_adds_evaluation_con_for_a_blunder() -> None:
+    context = ExplanationContext(
+        fen=chess.STARTING_FEN,
+        move_san="f3",
+        classification="blunder",
+        score_cp=-300,
+        mate_in=None,
+        win_rate=0.15,
+        win_rate_loss=0.35,
+        alternatives=[MoveSnapshot(san="e4", score_cp=30, mate_in=None)],
+        features=[],
+    )
+    explanation = await RuleExplainer().explain(context)
+    assert any("Perdeu 35% de chance" in con for con in explanation.cons)
+    assert "O melhor era e4 (+0.30)" in explanation.summary
+
+
+async def test_rule_explainer_reports_allowed_mate() -> None:
+    context = ExplanationContext(
+        fen=chess.STARTING_FEN,
+        move_san="Qa2",
+        classification="blunder",
+        score_cp=None,
+        mate_in=-3,
+        win_rate=0.0,
+        win_rate_loss=0.5,
+        alternatives=[MoveSnapshot(san="Qd4", score_cp=0, mate_in=None)],
+        features=[],
+    )
+    explanation = await RuleExplainer().explain(context)
+    assert any("Permite xeque-mate em 3" in con for con in explanation.cons)
+    assert "Você leva mate em 3" in explanation.summary
+
+
+async def test_rule_explainer_has_no_cons_when_delivering_mate() -> None:
+    context = ExplanationContext(
+        fen=chess.STARTING_FEN,
+        move_san="Qh7#",
+        classification="brilliancy",
+        score_cp=None,
+        mate_in=1,
+        win_rate=1.0,
+        win_rate_loss=0.0,
+        alternatives=[],
+        features=[
+            FeatureDelta(name="material_balance", delta=-9.0, unit="peões"),
+            FeatureDelta(name="king_safety", delta=-2.0, unit="atacantes"),
+        ],
+    )
+    explanation = await RuleExplainer().explain(context)
+    assert explanation.cons == []
+    assert any("xeque-mate" in pro for pro in explanation.pros)
+    assert "Xeque-mate em 1" in explanation.summary
+
+
+async def test_rule_explainer_translates_units() -> None:
+    context = ExplanationContext(
+        fen=chess.STARTING_FEN,
+        move_san="e4",
+        classification="good",
+        score_cp=20,
+        mate_in=None,
+        win_rate=0.52,
+        win_rate_loss=0.0,
+        alternatives=[],
+        features=[
+            FeatureDelta(name="mobility", delta=7.0, unit="casas"),
+            FeatureDelta(name="material_balance", delta=1.0, unit="peões"),
+        ],
+    )
+    explanation = await RuleExplainer().explain(context)
+    assert any("(+7 casas)" in pro for pro in explanation.pros)
+    assert any("(+1 peão)" in pro for pro in explanation.pros)
 
 
 async def test_llm_explainer_falls_back_on_error(
@@ -135,6 +211,45 @@ async def test_llm_explainer_falls_back_on_error(
     monkeypatch.setattr(explainer, "_generate", _boom)
     explanation = await explainer.explain(_make_context())
     assert explanation.mode == "rule"
+
+
+async def test_llm_explainer_fills_empty_feedback_from_rules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        azure_openai_endpoint="https://example.com",
+        azure_openai_key="fake",
+        azure_openai_deployment="fake-deployment",
+    )
+    explainer = LLMExplainer(settings, fallback=RuleExplainer())
+
+    def _empty(context: ExplanationContext) -> Explanation:
+        return Explanation(
+            mode="llm",
+            classification=context.classification,
+            summary="Resumo do modelo",
+            pros=[],
+            cons=[],
+        )
+
+    monkeypatch.setattr(explainer, "_generate", _empty)
+    context = ExplanationContext(
+        fen=chess.STARTING_FEN,
+        move_san="g4",
+        classification="blunder",
+        score_cp=None,
+        mate_in=-1,
+        win_rate=0.0,
+        win_rate_loss=0.44,
+        alternatives=[MoveSnapshot(san="e3", score_cp=-66, mate_in=None)],
+        features=[],
+    )
+
+    explanation = await explainer.explain(context)
+    assert explanation.mode == "llm"
+    assert explanation.summary == "Resumo do modelo"
+    assert explanation.cons
+    assert any("Perdeu" in con for con in explanation.cons)
 
 
 async def test_llm_explainer_caches_by_position_and_move(
@@ -167,6 +282,7 @@ def _make_context() -> ExplanationContext:
         score_cp=0,
         mate_in=None,
         win_rate=0.5,
+        win_rate_loss=0.0,
         alternatives=[MoveSnapshot(san="d4", score_cp=-20, mate_in=None)],
         features=[],
     )
