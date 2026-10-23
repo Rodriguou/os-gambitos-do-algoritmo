@@ -5,7 +5,8 @@ import pytest
 
 from app.analysis import AnalysisService, GameOverError, IllegalMoveError, InvalidFenError
 from app.config import Settings
-from app.models import AnalysisOptions, AnalysisRequest, BestMoveRequest
+from app.engine import MATE_SCORE
+from app.models import AnalysisOptions, AnalysisRequest, BestMoveRequest, PositionEvalRequest
 from app.xai import RuleExplainer
 from tests.fake_engine import FakeEngine
 
@@ -129,3 +130,75 @@ async def test_best_move_rejects_invalid_fen() -> None:
     service = make_service(FakeEngine())
     with pytest.raises(InvalidFenError):
         await service.best_move(BestMoveRequest(fen="not-a-fen"))
+
+
+async def test_evaluate_position_from_whites_perspective() -> None:
+    engine = FakeEngine(base_score_cp=30)
+    service = make_service(engine)
+    response = await service.evaluate_position(PositionEvalRequest(fen=chess.STARTING_FEN))
+    assert response.turn == "w"
+    assert response.score_cp == 30
+    assert response.mate_in is None
+    assert response.win_rate is not None and response.win_rate > 0.5
+    assert response.depth == 12
+    assert engine.calls[-1]["multi_pv"] == 1
+
+
+async def test_evaluate_position_flips_black_to_move() -> None:
+    # After 1.e4 it is Black's turn; a +20 for Black is -20 for White.
+    fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+    service = make_service(FakeEngine(base_score_cp=20))
+    response = await service.evaluate_position(PositionEvalRequest(fen=fen))
+    assert response.turn == "b"
+    assert response.score_cp == -20
+    assert response.win_rate is not None and response.win_rate < 0.5
+
+
+async def test_evaluate_position_forwards_depth() -> None:
+    engine = FakeEngine()
+    service = make_service(engine)
+    await service.evaluate_position(PositionEvalRequest(fen=chess.STARTING_FEN, depth=8))
+    assert engine.calls[-1]["depth"] == 8
+
+
+async def test_evaluate_position_handles_black_checkmate() -> None:
+    service = make_service(FakeEngine())
+    response = await service.evaluate_position(
+        PositionEvalRequest(fen="7k/6Q1/6K1/8/8/8/8/8 b - - 0 1")
+    )
+    assert response.turn == "b"
+    assert response.score_cp == MATE_SCORE
+    assert response.win_rate == 1.0
+
+
+async def test_evaluate_position_handles_white_checkmate() -> None:
+    service = make_service(FakeEngine())
+    response = await service.evaluate_position(
+        PositionEvalRequest(fen="k7/8/8/8/8/5p2/6q1/7K w - - 0 1")
+    )
+    assert response.turn == "w"
+    assert response.score_cp == -MATE_SCORE
+    assert response.win_rate == 0.0
+    assert response.score_cp is not None
+    assert response.score_cp < 0
+
+
+async def test_evaluate_position_handles_stalemate() -> None:
+    service = make_service(FakeEngine())
+    response = await service.evaluate_position(
+        PositionEvalRequest(fen="7k/5Q2/6K1/8/8/8/8/8 b - - 0 1")
+    )
+    assert response.score_cp == 0
+    assert response.win_rate == 0.5
+
+
+async def test_evaluate_position_rejects_invalid_fen() -> None:
+    service = make_service(FakeEngine())
+    with pytest.raises(InvalidFenError):
+        await service.evaluate_position(PositionEvalRequest(fen="not-a-fen"))
+
+
+def test_config_reports_rule_mode_without_azure() -> None:
+    config = make_service(FakeEngine()).config()
+    assert config.llm_available is False
+    assert config.explainer_default_mode == "rule"

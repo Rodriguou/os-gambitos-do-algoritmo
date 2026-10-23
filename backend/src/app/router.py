@@ -8,7 +8,10 @@ from app.models import (
     AnalysisResponse,
     BestMoveRequest,
     BestMoveResponse,
+    ConfigResponse,
     ErrorResponse,
+    PositionEvalRequest,
+    PositionEvalResponse,
 )
 
 router = APIRouter()
@@ -52,3 +55,24 @@ async def best_move(
 ) -> BestMoveResponse:
     """Get the opponent's move at a difficulty level."""
     return await service.best_move(request)
+
+
+@router.post(
+    "/evaluate",
+    response_model=PositionEvalResponse,
+    responses={400: {"model": ErrorResponse}},
+)
+async def evaluate(
+    request: PositionEvalRequest,
+    service: AnalysisService = Depends(get_analysis_service),
+) -> PositionEvalResponse:
+    """Evaluate the current position for the advantage bar."""
+    return await service.evaluate_position(request)
+
+
+@router.get("/config", response_model=ConfigResponse)
+async def get_config(
+    service: AnalysisService = Depends(get_analysis_service),
+) -> ConfigResponse:
+    """Report optional runtime capabilities (e.g. Azure availability)."""
+    return service.config()

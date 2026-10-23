@@ -93,3 +93,28 @@ class BestMoveResponse(BaseModel):
     score_cp: int | None = None
     mate_in: int | None = None
     level: DifficultyLevel
+
+
+class PositionEvalRequest(BaseModel):
+    """A position (FEN) to evaluate for the advantage bar."""
+
+    fen: str
+    depth: int | None = Field(default=None, ge=1, le=50)
+
+
+class PositionEvalResponse(BaseModel):
+    """Evaluation of the current position, always from White's perspective."""
+
+    fen: str
+    turn: Literal["w", "b"]
+    score_cp: int | None = None
+    mate_in: int | None = None
+    win_rate: float | None = None
+    depth: int
+
+
+class ConfigResponse(BaseModel):
+    """Runtime capabilities the frontend needs to configure itself."""
+
+    llm_available: bool
+    explainer_default_mode: ExplainerMode

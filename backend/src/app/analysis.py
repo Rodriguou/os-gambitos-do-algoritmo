@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import chess
 
 from app.config import Settings
-from app.engine import ChessEngine, EngineAnalysis, ScoredMove, score_value
+from app.engine import MATE_SCORE, ChessEngine, EngineAnalysis, ScoredMove, score_value
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
     BestMoveRequest,
     BestMoveResponse,
+    ConfigResponse,
     DifficultyLevel,
     MoveClassification,
     MoveEvaluation,
+    PositionEvalRequest,
+    PositionEvalResponse,
     PositionInfo,
 )
 from app.xai import (
@@ -27,6 +31,7 @@ from app.xai import (
     classify_move,
     extract_features,
     material_balance,
+    win_rate_from_score,
 )
 
 
@@ -167,6 +172,66 @@ class AnalysisService:
             score_cp=played.score_cp,
             mate_in=played.mate_in,
             level=request.level,
+        )
+
+    async def evaluate_position(self, request: PositionEvalRequest) -> PositionEvalResponse:
+        """Evaluate the current position for the advantage bar.
+
+        Stockfish returns scores from the side to move; the bar always
+        speaks from White's perspective, so Black-to-move lines are flipped.
+        """
+        board = self._board(request.fen)
+        depth = request.depth or self._settings.position_eval_depth
+        turn: Literal["w", "b"] = "w" if board.turn else "b"
+
+        if board.is_checkmate():
+            white_won = board.turn == chess.BLACK
+            return PositionEvalResponse(
+                fen=request.fen,
+                turn=turn,
+                score_cp=MATE_SCORE if white_won else -MATE_SCORE,
+                win_rate=1.0 if white_won else 0.0,
+                depth=depth,
+            )
+        if board.is_game_over():
+            return PositionEvalResponse(
+                fen=request.fen, turn=turn, score_cp=0, win_rate=0.5, depth=depth
+            )
+
+        analysis = await self._engine.analyse(
+            request.fen,
+            depth=depth,
+            max_time_ms=self._settings.default_max_time_ms,
+            multi_pv=1,
+        )
+        if not analysis.moves:
+            raise RuntimeError("engine returned no analysis for the position")
+
+        scored = analysis.moves[0]
+        score_cp = scored.score_cp
+        mate_in = scored.mate_in
+        win_rate = scored.win_rate
+        if board.turn == chess.BLACK:
+            score_cp = None if score_cp is None else -score_cp
+            mate_in = None if mate_in is None else -mate_in
+            win_rate = None if win_rate is None else 1.0 - win_rate
+        if win_rate is None and score_cp is not None:
+            win_rate = win_rate_from_score(score_cp)
+
+        return PositionEvalResponse(
+            fen=request.fen,
+            turn=turn,
+            score_cp=score_cp,
+            mate_in=mate_in,
+            win_rate=win_rate,
+            depth=depth,
+        )
+
+    def config(self) -> ConfigResponse:
+        """Report which optional features are available at runtime."""
+        return ConfigResponse(
+            llm_available=self._llm_explainer is not None,
+            explainer_default_mode=self._settings.explainer_default_mode,
         )
 
     def _board(self, fen: str) -> chess.Board:

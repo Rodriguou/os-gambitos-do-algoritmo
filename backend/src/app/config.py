@@ -30,10 +30,16 @@ class Settings(BaseSettings):
     explainer_default_mode: ExplainerMode = "rule"
     cache_max_size: int = 512
 
+    # Shallower search used only by the advantage bar: it needs to be
+    # fast and does not feed the didactic explanations.
+    position_eval_depth: int = 12
+
     azure_openai_endpoint: str | None = None
     azure_openai_key: str | None = None
     azure_openai_deployment: str | None = None
     azure_openai_api_version: str = "2024-10-21"
+    azure_openai_timeout_s: float = 20.0
+    azure_openai_max_retries: int = 0
 
     cors_origins: list[str] = ["*"]
 
