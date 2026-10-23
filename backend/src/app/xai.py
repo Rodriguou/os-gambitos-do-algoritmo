@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 import chess
 from openai import AzureOpenAI
@@ -27,6 +28,8 @@ from openai import AzureOpenAI
 from app.config import Settings
 from app.engine import ScoredMove, score_value
 from app.models import Explanation, MoveClassification
+
+logger = logging.getLogger(__name__)
 
 # Classification is based on how much win probability the move gave away,
 # not on raw centipawns: losing 100cp from a winning position is not the
@@ -63,6 +66,11 @@ def _win_rate(move: ScoredMove) -> float:
     return win_rate_from_score(score_value(move))
 
 
+def win_rate_loss(played: ScoredMove, best: ScoredMove) -> float:
+    """How much win probability the played move gave away to the best move."""
+    return max(0.0, _win_rate(best) - _win_rate(played))
+
+
 def classify_move(played: ScoredMove, best: ScoredMove) -> MoveClassification:
     """Classify a move by how much winning chance it gave away to the best move."""
     # Delivering mate ends the game: always a brilliancy, even though the
@@ -72,7 +80,7 @@ def classify_move(played: ScoredMove, best: ScoredMove) -> MoveClassification:
 
     # Clamped at zero: inconsistent Multi-PV lines must never turn a move
     # into a brilliancy just because it outscored the reported best move.
-    loss = max(0.0, _win_rate(best) - _win_rate(played))
+    loss = win_rate_loss(played, best)
     if loss <= EXCELLENT_MAX_LOSS:
         return "excellent"
     if loss <= GOOD_MAX_LOSS:
@@ -147,11 +155,11 @@ class FeatureSpec:
 
 
 FEATURES: tuple[FeatureSpec, ...] = (
-    FeatureSpec("material_balance", "pawns", 1.0, material_balance),
-    FeatureSpec("mobility", "squares", 1.0, _mobility),
-    FeatureSpec("king_safety", "attackers", -1.0, _king_safety),
-    FeatureSpec("center_control", "squares", 1.0, _center_control),
-    FeatureSpec("pawn_structure", "weaknesses", -1.0, _pawn_weaknesses),
+    FeatureSpec("material_balance", "peões", 1.0, material_balance),
+    FeatureSpec("mobility", "casas", 1.0, _mobility),
+    FeatureSpec("king_safety", "atacantes", -1.0, _king_safety),
+    FeatureSpec("center_control", "casas", 1.0, _center_control),
+    FeatureSpec("pawn_structure", "fraquezas", -1.0, _pawn_weaknesses),
 )
 
 
@@ -198,6 +206,7 @@ class ExplanationContext:
     score_cp: int | None
     mate_in: int | None
     win_rate: float | None
+    win_rate_loss: float
     alternatives: list[MoveSnapshot]
     features: list[FeatureDelta]
 
@@ -235,9 +244,23 @@ class RuleExplainer:
     """Deterministic explainer: free, instant and fully testable."""
 
     async def explain(self, context: ExplanationContext) -> Explanation:
-        """Build prós and contras from feature deltas and the classification."""
+        """Build prós and contras from the evaluation and the feature deltas."""
         pros: list[str] = []
         cons: list[str] = []
+
+        # The evaluation loss is the most actionable con: structural
+        # features alone miss hanging pieces and other tactics.
+        if context.win_rate_loss > GOOD_MAX_LOSS:
+            cons.append(
+                f"Perdeu {context.win_rate_loss:.0%} de chance de vitória "
+                "em relação ao melhor lance"
+            )
+        if context.mate_in is not None and context.mate_in < 0:
+            cons.append(f"Permite xeque-mate em {abs(context.mate_in)} lance(s)")
+
+        if context.classification == "brilliancy" and context.mate_in is not None:
+            pros.append("Encontrou o xeque-mate")
+
         for feature in context.features:
             if feature.delta > 0.05:
                 phrase = FEATURE_PHRASES[feature.name][0]
@@ -245,6 +268,19 @@ class RuleExplainer:
             elif feature.delta < -0.05:
                 phrase = FEATURE_PHRASES[feature.name][1]
                 cons.append(f"{phrase.capitalize()} ({_format_delta(feature.delta, feature.unit)})")
+
+        if not pros:
+            if context.classification in ("excellent", "brilliancy"):
+                pros.append("Ficou entre os melhores lances da posição")
+            elif context.classification == "good":
+                pros.append("Não comprometeu a posição")
+        # Delivering mate ends the game: a material sacrifice or an exposed
+        # king is part of the combination, not a point against the move.
+        if context.classification == "brilliancy":
+            cons.clear()
+        if not cons and context.classification in ("inaccuracy", "mistake", "blunder"):
+            cons.append("A avaliação da posição piorou em relação ao melhor lance")
+
         return Explanation(
             mode="rule",
             classification=context.classification,
@@ -264,16 +300,27 @@ class RuleExplainer:
             parts.append(f"Avaliação da jogada: {context.score_cp / 100:+.2f}.")
         if context.win_rate is not None:
             parts.append(f"Chance de vitória: {context.win_rate:.0%}.")
-        if context.alternatives:
+        if context.classification in ("mistake", "blunder") and context.alternatives:
             best = context.alternatives[0]
-            if best.score_cp is not None:
-                parts.append(f"Melhor alternativa: {best.san} ({best.score_cp / 100:+.2f}).")
+            if best.mate_in is not None and best.mate_in > 0:
+                parts.append(f"O melhor era {best.san} (mate em {best.mate_in}).")
+            elif best.score_cp is not None:
+                parts.append(f"O melhor era {best.san} ({best.score_cp / 100:+.2f}).")
         return " ".join(parts)
 
 
+UNIT_SINGULAR: dict[str, str] = {
+    "peões": "peão",
+    "casas": "casa",
+    "atacantes": "atacante",
+    "fraquezas": "fraqueza",
+}
+
+
 def _format_delta(delta: float, unit: str) -> str:
-    """Format a feature delta for display, e.g. '+2 squares'."""
-    return f"{delta:+g} {unit}"
+    """Format a feature delta for display, e.g. '+2 casas'."""
+    label = UNIT_SINGULAR.get(unit, unit) if abs(delta) == 1 else unit
+    return f"{delta:+g} {label}"
 
 
 class LLMExplainer:
@@ -296,6 +343,8 @@ class LLMExplainer:
             azure_endpoint=settings.azure_openai_endpoint,
             api_key=settings.azure_openai_key,
             api_version=settings.azure_openai_api_version,
+            timeout=settings.azure_openai_timeout_s,
+            max_retries=settings.azure_openai_max_retries,
         )
         self._deployment = settings.azure_openai_deployment
         self._cache_max_size = settings.cache_max_size
@@ -311,6 +360,8 @@ class LLMExplainer:
                 "classification": context.classification,
                 "score_cp": context.score_cp,
                 "mate_in": context.mate_in,
+                "win_rate_loss": round(context.win_rate_loss, 3),
+                "best_alternative": context.alternatives[0].san if context.alternatives else None,
             },
             sort_keys=True,
         )
@@ -319,8 +370,27 @@ class LLMExplainer:
             return self._cache[key]
         try:
             explanation = await asyncio.to_thread(self._generate, context)
-        except Exception:
+        except Exception as error:
+            logger.warning(
+                "LLM explainer failed (%s: %s); falling back to rules",
+                type(error).__name__,
+                error,
+            )
             return await self._fallback.explain(context)
+
+        # An LLM can return an empty list even when the prompt asks for
+        # pros/cons. Never leave a bad move with an empty "Pontos
+        # negativos" card: fill only the missing side from the rules.
+        if not explanation.pros or not explanation.cons:
+            rule = await self._fallback.explain(context)
+            explanation = Explanation(
+                mode="llm",
+                classification=explanation.classification,
+                summary=explanation.summary or rule.summary,
+                pros=explanation.pros or rule.pros,
+                cons=explanation.cons or rule.cons,
+            )
+
         self._cache[key] = explanation
         while len(self._cache) > self._cache_max_size:
             self._cache.popitem(last=False)
@@ -337,8 +407,13 @@ class LLMExplainer:
                         "Você é um treinador de xadrez didático. Responda em "
                         "pt-BR, de forma clara e encorajadora, voltada a quem "
                         "está aprendendo. Use exclusivamente os dados "
-                        "fornecidos; nunca invente avaliações. Responda apenas "
-                        "com um JSON de chaves: summary, pros, cons."
+                        "fornecidos; nunca invente avaliações nem números. "
+                        "O resumo deve explicar o porquê em 1 ou 2 frases. "
+                        "Dê no máximo 3 prós e 3 contras curtos e concretos. "
+                        "Para erros e jogadas muito ruins, diga qual era o "
+                        "melhor lance. Não repita os mesmos números do resumo "
+                        "nos prós e contras. Responda apenas com um JSON de "
+                        "chaves: summary, pros, cons."
                     ),
                 },
                 {
@@ -350,10 +425,16 @@ class LLMExplainer:
                             "evaluation_cp": context.score_cp,
                             "mate_in": context.mate_in,
                             "win_rate": context.win_rate,
-                            "alternatives": [
-                                {"san": alt.san, "score_cp": alt.score_cp}
-                                for alt in context.alternatives[:3]
-                            ],
+                            "win_rate_loss": round(context.win_rate_loss, 3),
+                            "best_alternative": (
+                                {
+                                    "san": context.alternatives[0].san,
+                                    "score_cp": context.alternatives[0].score_cp,
+                                    "mate_in": context.alternatives[0].mate_in,
+                                }
+                                if context.alternatives
+                                else None
+                            ),
                             "features": [
                                 {
                                     "name": feature.name,
@@ -375,6 +456,16 @@ class LLMExplainer:
             mode="llm",
             classification=context.classification,
             summary=str(payload.get("summary", "")).strip() or "Jogada analisada.",
-            pros=[str(item) for item in payload.get("pros", [])][:3],
-            cons=[str(item) for item in payload.get("cons", [])][:3],
+            pros=_string_list(payload.get("pros"))[:3],
+            cons=_string_list(payload.get("cons"))[:3],
         )
+
+
+def _string_list(value: object) -> list[str]:
+    """Coerce a JSON field into a clean list of strings."""
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list):
+        items = cast(list[object], value)
+        return [str(item).strip() for item in items if str(item).strip()]
+    return []
