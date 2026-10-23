@@ -30,7 +30,8 @@ src/app/
   main.py       # app factory, lifespan (engine pool wiring), CORS, error handler
   config.py     # pydantic-settings: everything comes from env vars
   models.py     # Pydantic DTOs (request/response)
-  router.py     # HTTP endpoints: POST /v1/analysis, POST /v1/best-move, GET /v1/health
+  router.py     # HTTP endpoints: POST /v1/analysis, POST /v1/best-move,
+                # POST /v1/evaluate, GET /v1/config, GET /v1/health
   engine.py     # ChessEngine protocol, Stockfish adapter, process pool
   xai.py        # XAI layer: classifier, feature extractor, rule + LLM explainers
   analysis.py   # AnalysisService: orchestration and request validation
@@ -85,7 +86,13 @@ Multi-PV window inconsistent).
    (attacked squares), king safety (attackers on the king square),
    center control, pawn structure (doubled + isolated pawns).
 3. `RuleExplainer` — maps features and classification to pt-BR
-   prós/contras and a summary. Free, instant, fully testable.
+   prós/contras and a summary. Free, instant, fully testable. The
+   evaluation loss is also a con ("Perdeu X% de chance de vitória")
+   whenever it exceeds the `good` threshold, so tactical mistakes are
+   explained even when no structural feature changed. Allowing mate
+   adds its own con. The summary only names the best move ("O melhor
+   era X") for `mistake` and `blunder`; feature units are already in
+   pt-BR and singular/plural are handled at display time.
 
 **LLM guardrails.** `LLMExplainer` (Azure OpenAI) is an *opt-in*
 polisher, selected per request via `explanation_mode` (default from
@@ -97,22 +104,43 @@ polisher, selected per request via `explanation_mode` (default from
 - It is enabled only when `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`
   and `AZURE_OPENAI_DEPLOYMENT` are all set.
 - Any failure (network, quota, JSON parsing) falls back to
-  `RuleExplainer` — the API never breaks because of the LLM.
-- Responses are cached by (FEN, move, classification, score, mate)
-  with an LRU cap (`CACHE_MAX_SIZE`) to save credits; positions repeat
-  a lot in chess.
+  `RuleExplainer` — the API never breaks because of the LLM. Failures
+  are logged and bounded by `AZURE_OPENAI_TIMEOUT_S` and
+  `AZURE_OPENAI_MAX_RETRIES` (default: one attempt, no retry) so a
+  broken Azure never holds the response for long.
+- Responses are cached by (FEN, move, classification, score, mate,
+  win-rate loss, best alternative) with an LRU cap (`CACHE_MAX_SIZE`)
+  to save credits; positions repeat a lot in chess.
 - Uses a small model, low temperature, and JSON response format.
 
 **Opponent endpoint.** `POST /v1/best-move` returns the engine's move
 for the side to move at a didactic difficulty level (`beginner` /
 `intermediate` / `advanced`, mapped to Skill Level + depth in
-`LEVEL_SETTINGS`). Feedback (`/v1/analysis`) always runs at full
-strength — only the opponent is weakened. Because the pool shares
+`LEVEL_SETTINGS`; `beginner` is Skill Level 0/depth 2, with no random
+blunders or material handicap). Feedback (`/v1/analysis`) always runs at
+full strength — only the opponent is weakened. Because the pool shares
 processes across requests, `StockfishEngine.play` resets
 `Skill Level` to 20 in a `finally` block, so a weakened opponent can
 never leak into a later analysis. Positions with no legal moves return
 400 (`GameOverError`). The response `score_cp` is the evaluation after
 the AI's move, from the AI's own perspective.
+
+**Advantage-bar endpoint.** `POST /v1/evaluate` is intentionally
+separate from `/v1/analysis`: the bar needs the *current* position and
+a fast search (`POSITION_EVAL_DEPTH`, default 12), not the didactic
+analysis of the last move. Stockfish scores are from the side to move;
+the endpoint flips them so the response is always from White's
+perspective (the human player). Checkmate returns a `±MATE_SCORE`
+sentinel with no `mate_in`, which sends the frontend bar straight to
+the edge; draws return `score_cp = 0`. The frontend aborts the previous
+request on every FEN change, so a slow evaluation can never overwrite
+a newer one.
+
+**Config endpoint.** `GET /v1/config` reports `llm_available` (true only
+when all three Azure variables are set) and `explainer_default_mode`.
+The frontend uses it to disable the Azure toggle and to avoid sending
+`explanation_mode: "llm"` when the backend would immediately fall back
+to rules.
 
 **Server-side validation.** The frontend validates with chess.js, but
 the backend re-validates everything: FEN parsing + `board.is_valid()`,

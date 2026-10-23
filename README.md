@@ -9,7 +9,8 @@ avaliação em feedback didático (prós e contras) em português.
 - `backend/` — API FastAPI + Stockfish + camada XAI (Python, uv).
   Veja `backend/README.md` para executar e `backend/AGENTS.md` para
   as decisões de arquitetura.
-- `frontend/` — a definir (React + react-chessboard + chess.js).
+- `frontend/` — React + react-chessboard + chess.js. Interface da
+  partida, relógio, barra de vantagem e painel de análise.
 
 ## Stack
 
@@ -33,5 +34,4 @@ para `main`. Antes de abrir o PR:
 
 A CI (`.github/workflows/ci.yml`) roda automaticamente no PR: lint,
 formatação, tipagem strict e testes no backend (`pytest`, sem
-Stockfish); lint, build e testes no frontend quando `frontend/`
-existir.
+Stockfish); lint, build e testes no frontend.
