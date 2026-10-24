@@ -10,7 +10,7 @@ export function Header({ nivelAtual, onTrocarNivel }) {
 
       {/* Nome do app, que é o que a galera vai ler primeiro */}
       <h1 className="text-center text-2xl font-normal tracking-wide md:text-3xl">
-        Os gambitos do Algoritmo
+        Os Gambitos do Algoritmo
       </h1>
 
       {/* Dificuldade da IA */}
