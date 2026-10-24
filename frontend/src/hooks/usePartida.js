@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { pedirLanceAdversario } from "../services/api";
 import { descreverFim } from "../utils/fimPartida";
+import { explicarLanceIlegal } from "../utils/motivoLanceIlegal";
 
 
 // Fotografa o que a tela precisa saber do andamento jogo
@@ -24,7 +25,7 @@ function resumirEstado(jogo) {
   a gente pede o lance pro backend (/v1/best-move) e aplica no tabuleiro.
   O jogador é o branco, que joga pelo próprio tabuleiro.
 */
-export function usePartida({ nivel, onLanceJogador } = {}) {
+export function usePartida({ nivel, onLanceJogador, onLanceIlegal } = {}) {
 
   const [jogo] = useState(() => new Chess());
 
@@ -132,6 +133,13 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
   }, [desistiu, jogo, buscarLanceIA]);
 
 
+  // Por que este lance não vale? null quando está tudo certo ou não há
+  // o que avisar. Serve ao modal de promoção, que valida antes de abrir.
+  const explicarLance = useCallback(
+    (lance) => explicarLanceIlegal(jogo, lance),
+    [jogo],
+  );
+
   const jogar = useCallback(
     ({ from, to, promotion = "q" }) => {
       if (desistiu) return false;
@@ -148,7 +156,11 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
       const uci = corona ? `${from}${to}${promotion}` : `${from}${to}`;
 
       const ok = aplicarLance({ from, to, promotion });
-      if (!ok) return false;
+      if (!ok) {
+        // Só o lance do jogador explica o erro; o da IA não passa por aqui
+        onLanceIlegal?.(explicarLanceIlegal(jogo, { from, to }));
+        return false;
+      }
 
       // Avisa a página pra analisar o lance e atualizar a barra de vantagem
       onLanceJogador?.({ fen: fenAntes, move: uci });
@@ -158,7 +170,7 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
       }
       return true;
     },
-    [desistiu, aplicarLance, jogo, buscarLanceIA, onLanceJogador],
+    [desistiu, aplicarLance, jogo, buscarLanceIA, onLanceJogador, onLanceIlegal],
   );
 
 
@@ -208,6 +220,7 @@ export function usePartida({ nivel, onLanceJogador } = {}) {
     erroIA,
     podeVoltar: !desistiu && jogo.history().length > 0,
     jogar,
+    explicarLance,
     tentarNovamenteIA,
     voltarJogada,
     reiniciar,

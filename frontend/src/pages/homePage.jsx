@@ -8,6 +8,7 @@ import { AvisoFim } from "../components/avisoFim";
 import { ModalConfiguracoes } from "../components/modalConfiguracoes";
 import { ModalConfirmacao } from "../components/modalConfirmacao";
 import { ModalPromocao } from "../components/modalPromocao";
+import { AvisosToaster } from "../components/avisosToaster";
 import { usePartida } from "../hooks/usePartida";
 import { useRelogioPartida } from "../hooks/useRelogio";
 import { useAnalise } from "../hooks/useAnalise";
@@ -16,6 +17,7 @@ import { useConfig } from "../hooks/useConfig";
 import { NIVEL_PADRAO } from "../constants/partida";
 import { vantagemDasBrancas } from "../utils/vantagem";
 import { carregarFundo, salvarFundo } from "../utils/fundoSalvo";
+import { avisarLanceIlegal } from "../utils/avisos";
 
 
 // Aqui só mora o que é assunto da página: estado da interface e a ligação
@@ -53,11 +55,16 @@ export default function HomePage() {
     erroIA,
     podeVoltar,
     jogar,
+    explicarLance,
     tentarNovamenteIA,
     voltarJogada,
     reiniciar,
     desistir,
-  } = usePartida({ nivel, onLanceJogador: analisar });
+  } = usePartida({
+    nivel,
+    onLanceJogador: analisar,
+    onLanceIlegal: avisarLanceIlegal,
+  });
 
   // Relógio único de partida: cresce enquanto a partida está viva
   const { tempoPartida, reiniciarRelogio } = useRelogioPartida({
@@ -114,6 +121,14 @@ export default function HomePage() {
     setPromocao(null);
   }
 
+  // O modal de promoção só abre se o lance for legal; senão o jogador
+  // recebe o motivo em vez de escolher uma peça que nunca vai entrar.
+  function pedirPromocao(lance) {
+    const aviso = explicarLance(lance);
+    if (aviso) avisarLanceIlegal(aviso);
+    else setPromocao(lance);
+  }
+
   return (
     <div
       className="min-h-svh bg-cover bg-center"
@@ -131,7 +146,7 @@ export default function HomePage() {
             <Tabuleiro
               posicao={posicao}
               onJogar={jogar}
-              onSolicitarPromocao={setPromocao}
+              onSolicitarPromocao={pedirPromocao}
               travado={pensando || Boolean(erroIA) || acabou}
               tempoPartida={tempoPartida}
             />
@@ -208,6 +223,8 @@ export default function HomePage() {
       />
 
       <AvisoFim fim={fim} onReiniciar={comecarNovaPartida} />
+
+      <AvisosToaster />
     </div>
   );
 }
