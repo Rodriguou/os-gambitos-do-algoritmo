@@ -8,6 +8,7 @@ remains unit-testable with a fake implementation.
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -39,6 +40,25 @@ class EngineAnalysis:
 
 
 MATE_SCORE = 100_000
+
+# Same logistic curve used by the frontend advantage bar (vantagem.js). It is
+# the single source of truth for win probability: Stockfish's own WDL is much
+# steeper (e.g. +2.0 reads as ~99%) and would contradict the bar.
+WIN_RATE_SLOPE = 0.00368208
+
+
+def win_rate_from_score(score_cp: int) -> float:
+    """Approximate win probability (0..1) from a centipawn score."""
+    return 1 / (1 + math.exp(-WIN_RATE_SLOPE * score_cp))
+
+
+def win_rate_from_eval(score_cp: int | None, mate_in: int | None) -> float | None:
+    """Win probability for the side to move; only a forced mate hits 0% or 100%."""
+    if mate_in is not None:
+        return 1.0 if mate_in > 0 else 0.0
+    if score_cp is None:
+        return None
+    return win_rate_from_score(score_cp)
 
 
 def score_value(move: ScoredMove) -> int:
@@ -90,18 +110,6 @@ class ChessEngine(Protocol):
         ...
 
 
-def _win_rate(info: chess.engine.InfoDict, board: chess.Board) -> float | None:
-    """Best-effort win probability for the side to move, from WDL data."""
-    wdl = info.get("wdl")
-    if wdl is None:
-        return None
-    pov = wdl.pov(board.turn)
-    total = pov.wins + pov.draws + pov.losses
-    if total == 0:
-        return None
-    return (pov.wins + 0.5 * pov.draws) / total
-
-
 def _score_fields(score: chess.engine.PovScore) -> tuple[int | None, int | None]:
     """Split a PovScore into (score_cp, mate_in)."""
     relative = score.relative
@@ -110,7 +118,7 @@ def _score_fields(score: chess.engine.PovScore) -> tuple[int | None, int | None]
     return relative.score(), None
 
 
-def _scored_move(move: chess.Move, info: chess.engine.InfoDict, board: chess.Board) -> ScoredMove:
+def _scored_move(move: chess.Move, info: chess.engine.InfoDict) -> ScoredMove:
     """Convert one Stockfish info entry into a ScoredMove."""
     score_cp: int | None = None
     mate_in: int | None = None
@@ -121,7 +129,7 @@ def _scored_move(move: chess.Move, info: chess.engine.InfoDict, board: chess.Boa
         move=move,
         score_cp=score_cp,
         mate_in=mate_in,
-        win_rate=_win_rate(info, board),
+        win_rate=win_rate_from_eval(score_cp, mate_in),
         depth=info.get("depth") or 0,
         pv=list(info.get("pv") or []),
     )
@@ -149,7 +157,6 @@ class StockfishEngine:
 
         def _run() -> EngineAnalysis:
             board = chess.Board(fen)
-            self._engine.configure({"UCI_ShowWDL": True})
             results = self._engine.analyse(
                 board,
                 chess.engine.Limit(depth=depth, time=max_time_ms / 1000.0),
@@ -160,7 +167,7 @@ class StockfishEngine:
             for info in results:
                 pv = info.get("pv")
                 if pv:
-                    moves.append(_scored_move(pv[0], info, board))
+                    moves.append(_scored_move(pv[0], info))
             # python-chess may report the lines at slightly different
             # depths, so the engine order is not guaranteed to be sorted
             # by score. Sorting here keeps "best move" and "best
