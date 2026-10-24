@@ -4,14 +4,15 @@ import chess
 import pytest
 
 from app.config import Settings
-from app.engine import ScoredMove, score_value
-from app.models import Explanation
+from app.engine import ScoredMove, score_value, win_rate_from_eval
+from app.models import Explanation, MoveClassification
 from app.xai import (
     ExplanationContext,
     FeatureDelta,
     LLMExplainer,
     MoveSnapshot,
     RuleExplainer,
+    best_move_sentence,
     classify_move,
     extract_features,
     material_balance,
@@ -247,7 +248,8 @@ async def test_llm_explainer_fills_empty_feedback_from_rules(
 
     explanation = await explainer.explain(context)
     assert explanation.mode == "llm"
-    assert explanation.summary == "Resumo do modelo"
+    assert explanation.summary.startswith("Resumo do modelo")
+    assert "O melhor era e3 (-0.66)." in explanation.summary
     assert explanation.cons
     assert any("Perdeu" in con for con in explanation.cons)
 
@@ -286,3 +288,91 @@ def _make_context() -> ExplanationContext:
         alternatives=[MoveSnapshot(san="d4", score_cp=-20, mate_in=None)],
         features=[],
     )
+
+
+def _context_for(
+    classification: MoveClassification, alternatives: list[MoveSnapshot]
+) -> ExplanationContext:
+    return ExplanationContext(
+        fen=chess.STARTING_FEN,
+        move_san="a3",
+        classification=classification,
+        score_cp=-20,
+        mate_in=None,
+        win_rate=0.47,
+        win_rate_loss=0.07,
+        alternatives=alternatives,
+        features=[],
+    )
+
+
+async def test_rule_explainer_names_best_move_for_inaccuracy() -> None:
+    context = _context_for("inaccuracy", [MoveSnapshot(san="Nf3", score_cp=35, mate_in=None)])
+    explanation = await RuleExplainer().explain(context)
+    assert "O melhor era Nf3 (+0.35)." in explanation.summary
+
+
+@pytest.mark.parametrize("classification", ["good", "excellent", "brilliancy"])
+async def test_rule_explainer_hides_best_move_for_good_moves(
+    classification: MoveClassification,
+) -> None:
+    context = _context_for(classification, [MoveSnapshot(san="Nf3", score_cp=35, mate_in=None)])
+    explanation = await RuleExplainer().explain(context)
+    assert "O melhor era" not in explanation.summary
+
+
+def test_best_move_sentence_handles_mates_and_missing_scores() -> None:
+    mate = _context_for("mistake", [MoveSnapshot(san="Qh7#", score_cp=None, mate_in=2)])
+    assert best_move_sentence(mate) == "O melhor era Qh7# (mate em 2)."
+    losing = _context_for("blunder", [MoveSnapshot(san="Kf1", score_cp=None, mate_in=-3)])
+    assert best_move_sentence(losing) == "O melhor era Kf1 (leva mate em 3)."
+    bare = _context_for("inaccuracy", [MoveSnapshot(san="Kf1", score_cp=None, mate_in=None)])
+    assert best_move_sentence(bare) == "O melhor era Kf1."
+    assert best_move_sentence(_context_for("inaccuracy", [])) is None
+
+
+def test_best_move_sentence_picks_the_top_alternative_regardless_of_order() -> None:
+    context = _context_for(
+        "mistake",
+        [
+            MoveSnapshot(san="h3", score_cp=-10, mate_in=None),
+            MoveSnapshot(san="Nf3", score_cp=40, mate_in=None),
+        ],
+    )
+    assert best_move_sentence(context) == "O melhor era Nf3 (+0.40)."
+
+
+async def test_llm_explainer_appends_best_move_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        azure_openai_endpoint="https://example.com",
+        azure_openai_key="fake",
+        azure_openai_deployment="fake-deployment",
+    )
+    explainer = LLMExplainer(settings, fallback=RuleExplainer())
+
+    def _no_best(context: ExplanationContext) -> Explanation:
+        return Explanation(
+            mode="llm",
+            classification=context.classification,
+            summary="Resumo sem o melhor lance.",
+            pros=["ok"],
+            cons=["ruim"],
+        )
+
+    monkeypatch.setattr(explainer, "_generate", _no_best)
+    context = _context_for("inaccuracy", [MoveSnapshot(san="Nf3", score_cp=35, mate_in=None)])
+    explanation = await explainer.explain(context)
+    assert explanation.summary.endswith("O melhor era Nf3 (+0.35).")
+
+
+def test_win_rate_from_eval_only_reaches_extremes_on_mate() -> None:
+    # Values measured on Stockfish 19, where the native WDL read 99% / 0%.
+    assert win_rate_from_eval(198, None) == pytest.approx(0.67, abs=0.01)
+    low = win_rate_from_eval(-715, None)
+    assert low is not None and 0.0 < low < 0.1
+    assert win_rate_from_eval(3000, None) != 1.0
+    assert win_rate_from_eval(None, 3) == 1.0
+    assert win_rate_from_eval(None, -2) == 0.0
+    assert win_rate_from_eval(None, None) is None
