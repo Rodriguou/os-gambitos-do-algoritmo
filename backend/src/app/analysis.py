@@ -8,7 +8,14 @@ from typing import Literal
 import chess
 
 from app.config import Settings
-from app.engine import MATE_SCORE, ChessEngine, EngineAnalysis, ScoredMove, score_value
+from app.engine import (
+    MATE_SCORE,
+    ChessEngine,
+    EngineAnalysis,
+    ScoredMove,
+    score_value,
+    win_rate_from_eval,
+)
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -31,7 +38,6 @@ from app.xai import (
     classify_move,
     extract_features,
     material_balance,
-    win_rate_from_score,
     win_rate_loss,
 )
 
@@ -212,13 +218,12 @@ class AnalysisService:
         scored = analysis.moves[0]
         score_cp = scored.score_cp
         mate_in = scored.mate_in
-        win_rate = scored.win_rate
         if board.turn == chess.BLACK:
             score_cp = None if score_cp is None else -score_cp
             mate_in = None if mate_in is None else -mate_in
-            win_rate = None if win_rate is None else 1.0 - win_rate
-        if win_rate is None and score_cp is not None:
-            win_rate = win_rate_from_score(score_cp)
+        # Derived from the White-perspective eval, with the same curve as the
+        # frontend bar, so both always agree.
+        win_rate = win_rate_from_eval(score_cp, mate_in)
 
         return PositionEvalResponse(
             fen=request.fen,
@@ -285,11 +290,12 @@ class AnalysisService:
         mate_in = None
         if opponent.mate_in is not None:
             mate_in = -opponent.mate_in if opponent.mate_in != 0 else 1
+        score_cp = None if opponent.score_cp is None else -opponent.score_cp
         return ScoredMove(
             move=move,
-            score_cp=None if opponent.score_cp is None else -opponent.score_cp,
+            score_cp=score_cp,
             mate_in=mate_in,
-            win_rate=None if opponent.win_rate is None else 1.0 - opponent.win_rate,
+            win_rate=win_rate_from_eval(score_cp, mate_in),
             depth=depth,
             pv=[move],
         )

@@ -7,7 +7,7 @@ from app.analysis import AnalysisService, GameOverError, IllegalMoveError, Inval
 from app.config import Settings
 from app.engine import MATE_SCORE
 from app.models import AnalysisOptions, AnalysisRequest, BestMoveRequest, PositionEvalRequest
-from app.xai import RuleExplainer
+from app.xai import RuleExplainer, win_rate_from_score
 from tests.fake_engine import FakeEngine
 
 
@@ -152,6 +152,15 @@ async def test_evaluate_position_flips_black_to_move() -> None:
     assert response.turn == "b"
     assert response.score_cp == -20
     assert response.win_rate is not None and response.win_rate < 0.5
+
+
+async def test_evaluate_position_win_rate_matches_the_bar_curve() -> None:
+    # Black to move with +200 for Black: White sits at -200, ~33%, not 0%.
+    fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+    service = make_service(FakeEngine(base_score_cp=200))
+    response = await service.evaluate_position(PositionEvalRequest(fen=fen))
+    assert response.score_cp == -200
+    assert response.win_rate == pytest.approx(win_rate_from_score(-200))
 
 
 async def test_evaluate_position_forwards_depth() -> None:
