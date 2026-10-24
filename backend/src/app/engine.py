@@ -8,7 +8,10 @@ remains unit-testable with a fake implementation.
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
+import os
+import shutil
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -18,6 +21,8 @@ import chess
 import chess.engine
 
 from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -143,7 +148,17 @@ class StockfishEngine:
     """
 
     def __init__(self, path: str) -> None:
-        self._engine = chess.engine.SimpleEngine.popen_uci(path)
+        resolved_path = path
+        if not os.path.exists(resolved_path) and not shutil.which(resolved_path):
+            fallback = shutil.which("stockfish")
+            if fallback:
+                logger.warning(
+                    "Stockfish binary not found at '%s'; falling back to '%s'",
+                    path,
+                    fallback,
+                )
+                resolved_path = fallback
+        self._engine = chess.engine.SimpleEngine.popen_uci(resolved_path)
 
     async def analyse(
         self,

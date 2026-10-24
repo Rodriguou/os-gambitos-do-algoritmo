@@ -88,4 +88,43 @@ credenciais não estão configuradas.
    falhar (timeout, cota, JSON inválido), a resposta volta em `"rule"`
    automaticamente e o frontend avisa.
 
+## Docker e Hospedagem na Azure Container Apps
+
+### Construção e Execução Local com Docker
+
+O `Dockerfile` utiliza *multi-stage build* com `uv` e instala o Stockfish oficial do Linux Debian, executando a aplicação com usuário não-privilegiado (`appuser`).
+
+Construir a imagem a partir da raiz do repositório:
+
+```bash
+docker build -t os-gambitos-backend ./backend
+```
+
+Executar localmente passando as variáveis de ambiente:
+
+```bash
+docker run -p 8000:8000 --env-file backend/.env os-gambitos-backend
+```
+
+Verificar a saúde da API:
+
+```bash
+curl http://localhost:8000/v1/health
+# {"status":"ok"}
+```
+
+### Configurações na Azure Container Apps (ACA)
+
+Ao publicar o container na Azure Container Apps:
+- **Porta de Destino (Target Port):** `8000`
+- **Ingress:** Habilitado para tráfego externo via HTTP.
+- **Probes de Liveness e Readiness:**
+  - Protocolo: `HTTP`
+  - Caminho: `/v1/health`
+  - Porta: `8000`
+- **Variáveis de Ambiente / Secrets:**
+  - `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` (caso utilize IA).
+  - `CORS_ORIGINS`: Adicione o domínio de produção do frontend (ex.: `["https://seu-frontend.azurecontainerapps.io"]`).
+  - `STOCKFISH_POOL_SIZE`: O padrão é `4`. Ajuste para `2` caso utilize instâncias com 0.5 vCPU.
+
 Veja `AGENTS.md` para as decisões de arquitetura e convenções do projeto.
