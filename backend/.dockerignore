@@ -1,0 +1,26 @@
+# Python bytecode e caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.venv/
+env/
+venv/
+
+# Variáveis de ambiente locais com secrets
+.env
+.env.*
+!.env.example
+
+# Binário local do Stockfish (Windows, ~103 MB)
+vendor/
+
+# Testes e relatórios (desnecessários na imagem de produção)
+tests/
+
+# Git e editores
+.git/
+.gitignore
+.vscode/
+.idea/
