@@ -74,13 +74,17 @@ Multi-PV window inconsistent).
 
 1. `classify_move` — loss of win probability between the played move
    and the best move, obtained by converting the centipawn score through
-   the same logistic curve used by the frontend advantage bar (Stockfish
-   WDL is returned for display, but swings too much across Multi-PV lines
-   to drive the class), mapped to a class:
+   the same logistic curve used by the frontend advantage bar, mapped to
+   a class:
    `<= 2 p.p. excellent`, `<= 5 good`, `<= 10 inaccuracy`,
    `<= 20 mistake`, else `blunder`. Delivering mate is a `brilliancy`.
    The loss is clamped at zero, so inconsistent Multi-PV lines can
    never fake a brilliancy.
+   **Single source of truth for win rate:** every `win_rate` in the API
+   (`ScoredMove`, `/v1/analysis`, `/v1/evaluate`) is derived from
+   `score_cp`/`mate_in` via `win_rate_from_eval` in `engine.py`, never
+   from Stockfish's WDL (which is much steeper: +2.0 reads ~99% and
+   would contradict the bar). Only a forced mate yields 0%/100%.
 2. `extract_features` — pre/post-move deltas of interpretable
    features computed with python-chess: material balance, mobility
    (attacked squares), king safety (attackers on the king square),
@@ -90,8 +94,10 @@ Multi-PV window inconsistent).
    evaluation loss is also a con ("Perdeu X% de chance de vitória")
    whenever it exceeds the `good` threshold, so tactical mistakes are
    explained even when no structural feature changed. Allowing mate
-   adds its own con. The summary only names the best move ("O melhor
-   era X") for `mistake` and `blunder`; feature units are already in
+   adds its own con. The summary names the best move ("O melhor
+   era X") for `inaccuracy`, `mistake` and `blunder`
+   (`REVEAL_BEST_MOVE_CLASSES`); `LLMExplainer` appends the same
+   sentence when the model omits it. Feature units are already in
    pt-BR and singular/plural are handled at display time.
 
 **LLM guardrails.** `LLMExplainer` (Azure OpenAI) is an *opt-in*

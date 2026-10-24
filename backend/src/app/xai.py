@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,7 +25,7 @@ import chess
 from openai import AzureOpenAI
 
 from app.config import Settings
-from app.engine import ScoredMove, score_value
+from app.engine import MATE_SCORE, ScoredMove, score_value, win_rate_from_score
 from app.models import Explanation, MoveClassification
 
 logger = logging.getLogger(__name__)
@@ -41,10 +40,12 @@ INACCURACY_MAX_LOSS = 0.10
 MISTAKE_MAX_LOSS = 0.20
 
 # Centipawns are converted to win probability with the same logistic
-# curve used by the frontend advantage bar. Stockfish's WDL is exposed to
-# the user as "chance de vitória", but it is too noisy across Multi-PV
-# lines at didactic depths to drive the classification.
-WIN_RATE_SLOPE = 0.00368208
+# curve used by the frontend advantage bar (see app.engine). Stockfish's
+# WDL is deliberately not used: it is much steeper than the bar and would
+# contradict it, and it is too noisy across Multi-PV lines.
+
+# Classes that reveal the best alternative move to the player.
+REVEAL_BEST_MOVE_CLASSES: frozenset[str] = frozenset({"inaccuracy", "mistake", "blunder"})
 
 PIECE_VALUES: dict[int, float] = {
     chess.PAWN: 1,
@@ -54,11 +55,6 @@ PIECE_VALUES: dict[int, float] = {
     chess.QUEEN: 9,
 }
 CENTER_SQUARES = frozenset({chess.D4, chess.E4, chess.D5, chess.E5})
-
-
-def win_rate_from_score(score_cp: int) -> float:
-    """Approximate win probability (0..1) from a centipawn score."""
-    return 1 / (1 + math.exp(-WIN_RATE_SLOPE * score_cp))
 
 
 def _win_rate(move: ScoredMove) -> float:
@@ -211,6 +207,36 @@ class ExplanationContext:
     features: list[FeatureDelta]
 
 
+def _snapshot_value(snapshot: MoveSnapshot) -> int:
+    """Numeric evaluation of a snapshot, converting mates to a large score."""
+    if snapshot.mate_in is not None:
+        if snapshot.mate_in > 0:
+            return MATE_SCORE - snapshot.mate_in
+        return -(MATE_SCORE + snapshot.mate_in)
+    return snapshot.score_cp or 0
+
+
+def best_alternative(context: ExplanationContext) -> MoveSnapshot | None:
+    """Best move the player could have chosen, when it should be revealed."""
+    if context.classification not in REVEAL_BEST_MOVE_CLASSES or not context.alternatives:
+        return None
+    return max(context.alternatives, key=_snapshot_value)
+
+
+def best_move_sentence(context: ExplanationContext) -> str | None:
+    """'O melhor era X (...)' for suboptimal moves, or None if not applicable."""
+    best = best_alternative(context)
+    if best is None:
+        return None
+    if best.mate_in is not None and best.mate_in > 0:
+        return f"O melhor era {best.san} (mate em {best.mate_in})."
+    if best.mate_in is not None and best.mate_in < 0:
+        return f"O melhor era {best.san} (leva mate em {abs(best.mate_in)})."
+    if best.score_cp is not None:
+        return f"O melhor era {best.san} ({best.score_cp / 100:+.2f})."
+    return f"O melhor era {best.san}."
+
+
 class ExplanationProvider(Protocol):
     """Async interface for didactic feedback generators."""
 
@@ -278,7 +304,7 @@ class RuleExplainer:
         # king is part of the combination, not a point against the move.
         if context.classification == "brilliancy":
             cons.clear()
-        if not cons and context.classification in ("inaccuracy", "mistake", "blunder"):
+        if not cons and context.classification in REVEAL_BEST_MOVE_CLASSES:
             cons.append("A avaliação da posição piorou em relação ao melhor lance")
 
         return Explanation(
@@ -300,12 +326,8 @@ class RuleExplainer:
             parts.append(f"Avaliação da jogada: {context.score_cp / 100:+.2f}.")
         if context.win_rate is not None:
             parts.append(f"Chance de vitória: {context.win_rate:.0%}.")
-        if context.classification in ("mistake", "blunder") and context.alternatives:
-            best = context.alternatives[0]
-            if best.mate_in is not None and best.mate_in > 0:
-                parts.append(f"O melhor era {best.san} (mate em {best.mate_in}).")
-            elif best.score_cp is not None:
-                parts.append(f"O melhor era {best.san} ({best.score_cp / 100:+.2f}).")
+        if (sentence := best_move_sentence(context)) is not None:
+            parts.append(sentence)
         return " ".join(parts)
 
 
@@ -391,6 +413,15 @@ class LLMExplainer:
                 cons=explanation.cons or rule.cons,
             )
 
+        # The LLM never decides whether the best move is revealed: if it
+        # left the move out of the summary, append the deterministic sentence.
+        best = best_alternative(context)
+        sentence = best_move_sentence(context)
+        if best is not None and sentence is not None and best.san not in explanation.summary:
+            explanation = explanation.model_copy(
+                update={"summary": f"{explanation.summary} {sentence}".strip()}
+            )
+
         self._cache[key] = explanation
         while len(self._cache) > self._cache_max_size:
             self._cache.popitem(last=False)
@@ -410,7 +441,7 @@ class LLMExplainer:
                         "fornecidos; nunca invente avaliações nem números. "
                         "O resumo deve explicar o porquê em 1 ou 2 frases. "
                         "Dê no máximo 3 prós e 3 contras curtos e concretos. "
-                        "Para erros e jogadas muito ruins, diga qual era o "
+                        "Para imprecisões, erros e jogadas muito ruins, diga qual era o "
                         "melhor lance. Não repita os mesmos números do resumo "
                         "nos prós e contras. Responda apenas com um JSON de "
                         "chaves: summary, pros, cons."
