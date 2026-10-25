@@ -79,13 +79,17 @@ export default function HomePage() {
   const vantagemBrancas =
     fim?.motivo === "desistencia" ? 0 : vantagemDasBrancas(avaliacaoPosicao);
 
-  // A configuração só é aplicada uma vez: se a Azure existe, o modo llm
-  // passa a ser o padrão; se não, seguimos no Stockfish puro.
+  // A configuração só é aplicada uma vez. Ter a Azure disponível não liga o
+  // modo llm sozinho: ele só vira padrão se o backend pedir (explainer_default_mode
+  // = "llm"). Fora isso seguimos no Stockfish puro e o switch fica por conta
+  // do usuário, o que evita gastar crédito da Azure a cada visitante.
   const configAplicadaRef = useRef(false);
   useEffect(() => {
     if (!config || configAplicadaRef.current) return;
     configAplicadaRef.current = true;
-    definirUsarAzure(Boolean(config.llm_available));
+    definirUsarAzure(
+      Boolean(config.llm_available) && config.explainer_default_mode === "llm",
+    );
   }, [config, definirUsarAzure]);
 
   // Fundo novo vale na hora e fica salvo pra próxima visita
