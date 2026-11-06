@@ -12,7 +12,15 @@ const VARIANTES = {
   fraco: { caixa: "bg-painel-fraco", titulo: "text-fraco", icone: TriangleAlert },
 };
 
-export function CartaoDica({ titulo, descricao, variante = "destaque", selo }) {
+// `descricao` é um texto corrido; `itens` é uma lista, um ponto por linha.
+// Se `itens` vier vazio, cai no texto de `descricao` (ex.: "Nada grave...").
+export function CartaoDica({
+  titulo,
+  descricao,
+  itens,
+  variante = "destaque",
+  selo,
+}) {
   const estilo = VARIANTES[variante] ?? VARIANTES.destaque;
   const Icone = estilo.icone;
 
@@ -35,7 +43,15 @@ export function CartaoDica({ titulo, descricao, variante = "destaque", selo }) {
         )}
       </div>
 
-      {descricao && <p className="text-sm">{descricao}</p>}
+      {itens?.length ? (
+        <ul className="list-disc space-y-1 pl-5 text-sm marker:text-current">
+          {itens.map((item, indice) => (
+            <li key={`${indice}-${item}`}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        descricao && <p className="text-sm">{descricao}</p>
+      )}
     </article>
   );
 }

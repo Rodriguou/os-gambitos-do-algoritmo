@@ -5,11 +5,6 @@ import { ROTULOS_CLASSIFICACAO } from "../constants/dicas";
 // Painel de análise do último lance.
 // A resposta da API chega pronta da página: aqui só decidimos como mostrar.
 
-// Pros/cons chegam como listas; o cartão mostra tudo numa linha só
-function juntar(itens, vazio) {
-  return itens?.length ? itens.join(" · ") : vazio;
-}
-
 export function PainelDicas({
   analise,
   analisando = false,
@@ -57,14 +52,16 @@ export function PainelDicas({
           {/* 2. O que foi bom */}
           <CartaoDica
             titulo="Pontos positivos"
-            descricao={juntar(explicacao.pros, "Nenhum destaque por aqui.")}
+            itens={explicacao.pros}
+            descricao="Nenhum destaque por aqui."
             variante="forte"
           />
 
           {/* 3. O que custou (ou pode custar) a posição */}
           <CartaoDica
             titulo="Pontos negativos"
-            descricao={juntar(explicacao.cons, "Nada grave nesse lance.")}
+            itens={explicacao.cons}
+            descricao="Nada grave nesse lance."
             variante="fraco"
           />
         </>
